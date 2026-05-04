@@ -19,11 +19,36 @@ function normalizeCode(code) {
 function parseScannedCode(code) {
   const parts = code.split(';').map(s => s.trim()).filter(Boolean);
   const normalizedParts = parts.map(part => part.toUpperCase());
+
+  // Format 1: Semicolon-delimited QR (TOKEN0;ASSY_TYPE;PART_NO;TOKEN3)
+  if (parts.length >= 3) {
+    return {
+      token0: normalizedParts[0] || null,
+      assy_type: normalizedParts[1] || null,
+      pcb_part_no: normalizedParts[2] || null,
+      token3: normalizedParts[3] || null,
+    };
+  }
+
+  // Format 2: Continuous EBR code (e.g. EBR86093798922509201401)
+  // Part number is the first 11 chars: EBR + 8 digits
+  const singleToken = normalizedParts[0] || '';
+  const ebrMatch = singleToken.match(/^(EBR\d{8})/);
+  if (ebrMatch) {
+    return {
+      token0: null,
+      assy_type: null,
+      pcb_part_no: ebrMatch[1],
+      token3: singleToken.length > 11 ? singleToken.substring(11) : null,
+    };
+  }
+
+  // Fallback: treat entire code as pcb_part_no
   return {
-    token0: normalizedParts[0] || null,
-    assy_type: normalizedParts[1] || null,
-    pcb_part_no: normalizedParts[2] || null,
-    token3: normalizedParts[3] || null,
+    token0: null,
+    assy_type: null,
+    pcb_part_no: singleToken || null,
+    token3: null,
   };
 }
 
