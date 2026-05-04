@@ -1,7 +1,7 @@
 /**
  * PCB Defects Controller - Catalogo de defectos para reparacion PCB
  */
-const { pool } = require('../config/database');
+const { pool, getMexicoDateTime } = require('../config/database');
 
 function normalizeDefectName(value) {
   return (value || '').toString().trim().toUpperCase();
@@ -61,10 +61,11 @@ exports.create = async (req, res, next) => {
       });
     }
 
+    const ahora = getMexicoDateTime();
     const [result] = await pool.query(
-      `INSERT INTO pcb_defect_catalog (defect_name, description, created_by)
-       VALUES (?, ?, ?)`,
-      [defectName, description, createdBy]
+      `INSERT INTO pcb_defect_catalog (defect_name, description, created_by, created_at)
+       VALUES (?, ?, ?, ?)`,
+      [defectName, description, createdBy, ahora]
     );
 
     res.status(201).json({ success: true, id: result.insertId });

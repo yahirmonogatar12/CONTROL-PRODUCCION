@@ -6,7 +6,7 @@
  * Pantalla Flutter: lib/screens/pcb_inventory/
  */
 
-const { pool } = require('../config/database');
+const { pool, getMexicoDateTime } = require('../config/database');
 
 // ============================================
 // HELPERS
@@ -389,10 +389,11 @@ exports.scan = async (req, res, next) => {
           ? `${comentarios} | Salida de array por ${scannedOriginal}`
           : `Salida de array por ${scannedOriginal}`;
         for (const row of pendingRows) {
+          const ahora = getMexicoDateTime();
           const [result] = await connection.query(
             `INSERT INTO pcb_inventory_scan_prod
-              (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, comentarios, scanned_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, comentarios, scanned_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               invDate,
               row.scanned_original,
@@ -411,6 +412,7 @@ exports.scan = async (req, res, next) => {
               row.component_location,
               arrayComment,
               scanned_by || null,
+              ahora,
             ]
           );
           insertedIds.push(result.insertId);
@@ -523,10 +525,11 @@ exports.scan = async (req, res, next) => {
       });
     }
 
+    const ahoraScan = getMexicoDateTime();
     const [result] = await connection.query(
       `INSERT INTO pcb_inventory_scan_prod
-        (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, comentarios, scanned_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, comentarios, scanned_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         invDate,
         scannedOriginal,
@@ -545,6 +548,7 @@ exports.scan = async (req, res, next) => {
         componentLocationVal,
         comentarios || null,
         scanned_by || null,
+        ahoraScan,
       ]
     );
     const insertedIds = [result.insertId];
@@ -686,7 +690,7 @@ exports.bulkInitialStock = async (req, res, next) => {
       chunk.forEach(([partNo, qtyVal], index) => {
         const insertIndex = offset + index + 1;
         const scannedOriginal = `INITIAL:${partNo}:${nowToken}:${insertIndex}`;
-        placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         values.push(
           invDate,
           scannedOriginal,
@@ -705,12 +709,13 @@ exports.bulkInitialStock = async (req, res, next) => {
           null,
           initialComment,
           scanned_by || null,
+          getMexicoDateTime(),
         );
       });
 
       const [result] = await connection.query(
         `INSERT INTO pcb_inventory_scan_prod
-          (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, comentarios, scanned_by)
+          (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, comentarios, scanned_by, created_at)
          VALUES ${placeholders.join(', ')}`,
         values
       );
