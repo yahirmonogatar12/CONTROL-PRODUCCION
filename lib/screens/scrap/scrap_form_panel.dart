@@ -108,7 +108,7 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
   }
 
   Future<void> _fetchSuggestions(String query) async {
-    final results = await ApiService.autocompleteScrap(query);
+    final results = await ApiService.autocompleteScrap(query, _selectedArea);
     if (!mounted) return;
     setState(() => _suggestions = results);
     if (_suggestions.isNotEmpty) {

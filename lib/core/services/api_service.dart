@@ -4386,12 +4386,12 @@ class ApiService {
 
   // GET - Autocompletado de PCBs desde tabla raw
   static Future<List<Map<String, dynamic>>> autocompleteScrap(
-      String query) async {
+      String query, String area) async {
     try {
       if (query.length < 3) return [];
       final response = await http.get(
         Uri.parse(
-            '$baseUrl/scrap/autocomplete?q=${Uri.encodeQueryComponent(query)}'),
+            '$baseUrl/scrap/autocomplete?q=${Uri.encodeQueryComponent(query)}&area=${Uri.encodeQueryComponent(area)}'),
       );
       if (response.statusCode == 200) {
         final body = json.decode(response.body);

@@ -249,13 +249,12 @@ exports.deleteRecord = async (req, res, next) => {
 };
 
 // ============================================
-// GET /api/scrap/autocomplete?q=xxx
-// Busca PCBs en tabla raw por part_no parcial
-// Para PCBs sin QR: usuario escribe parte del EBR y selecciona
+// GET /api/scrap/autocomplete?q=xxx&area=yyy
+// Busca PCBs en tabla raw o componentes en tabla materiales
 // ============================================
 exports.autocomplete = async (req, res, next) => {
   try {
-    const { q } = req.query;
+    const { q, area } = req.query;
 
     if (!q || q.trim().length < 3) {
       return res.json({ success: true, data: [] });
@@ -263,19 +262,33 @@ exports.autocomplete = async (req, res, next) => {
 
     const searchTerm = `%${q.trim()}%`;
 
-    const [rows] = await pool.query(
-      `SELECT DISTINCT part_no, model, project 
-       FROM raw 
-       WHERE part_no LIKE ? AND part_no IS NOT NULL AND part_no != ''
-       ORDER BY part_no
-       LIMIT 20`,
-      [searchTerm]
-    );
-
-    res.json({
-      success: true,
-      data: rows,
-    });
+    if (area === 'Componente') {
+      // Buscar en tabla materiales por numero_parte o especificacion
+      const [rows] = await pool.query(
+        `SELECT DISTINCT 
+           numero_parte as part_no, 
+           codigo_material as model, 
+           especificacion_material as project 
+         FROM materiales 
+         WHERE (numero_parte LIKE ? OR especificacion_material LIKE ?)
+           AND numero_parte IS NOT NULL AND numero_parte != ''
+         ORDER BY numero_parte
+         LIMIT 20`,
+        [searchTerm, searchTerm]
+      );
+      return res.json({ success: true, data: rows });
+    } else {
+      // Búsqueda por defecto en tabla raw para PCBs
+      const [rows] = await pool.query(
+        `SELECT DISTINCT part_no, model, project 
+         FROM raw 
+         WHERE part_no LIKE ? AND part_no IS NOT NULL AND part_no != ''
+         ORDER BY part_no
+         LIMIT 20`,
+        [searchTerm]
+      );
+      return res.json({ success: true, data: rows });
+    }
   } catch (err) {
     next(err);
   }
