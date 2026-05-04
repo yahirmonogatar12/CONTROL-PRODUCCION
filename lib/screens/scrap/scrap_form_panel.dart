@@ -84,7 +84,7 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
 
   // ---- Autocomplete del scan ----
   void _onScanTextChanged() {
-    final text = _scanController.text.trim();
+    final text = _scanController.text.trim().toUpperCase();
 
     if (_isAutocompletePick) {
       _isAutocompletePick = false;
@@ -259,7 +259,7 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
   }
 
   Future<void> _onScan() async {
-    final code = _scanController.text.trim();
+    final code = _scanController.text.trim().toUpperCase();
     if (code.isEmpty) return;
 
     if (!AuthService.canWriteScrap) {
