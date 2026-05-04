@@ -842,6 +842,7 @@ async function runMigrations() {
   await addPcbInventoryTipoMovimiento();
   await createScrapMotivosTable();
   await createScrapRecordsTable();
+  await migrateScrapAreaColumn();
 
   // Reportar tablas faltantes una sola vez
   if (_missingTablesCache.size > 0) {
@@ -1020,7 +1021,7 @@ async function createScrapRecordsTable() {
         assy_type VARCHAR(20) NULL,
         part_no VARCHAR(50) NULL,
         modelo VARCHAR(120) NOT NULL DEFAULT 'N/A',
-        area ENUM('SMD','IMD','Assy','Componente','Mantenimiento') NOT NULL,
+        area VARCHAR(30) NOT NULL,
         motivo_scrap_id INT NULL,
         motivo_scrap_texto VARCHAR(200) NULL,
         comentarios TEXT NULL,
@@ -1039,6 +1040,30 @@ async function createScrapRecordsTable() {
   }
 }
 
+// Migrar columna area de scrap_records de ENUM a VARCHAR
+async function migrateScrapAreaColumn() {
+  try {
+    const [cols] = await pool.query(`
+      SELECT COLUMN_TYPE
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'scrap_records'
+      AND COLUMN_NAME = 'area'
+      LIMIT 1
+    `);
+    const colType = (cols[0]?.COLUMN_TYPE || '').toLowerCase();
+    if (colType.startsWith('enum')) {
+      await pool.query(`
+        ALTER TABLE scrap_records
+        MODIFY COLUMN area VARCHAR(30) NOT NULL
+      `);
+      console.log('\u2713 Columna scrap_records.area migrada de ENUM a VARCHAR(30)');
+    }
+  } catch (err) {
+    console.log('Nota: Error migrando scrap_records.area:', err.message);
+  }
+}
+
 module.exports = {
   runMigrations,
   createPcbDefectCatalogTable,
@@ -1047,5 +1072,3 @@ module.exports = {
   addPcbInventoryTipoMovimiento,
   addColumnIfNotExists
 };
-
-

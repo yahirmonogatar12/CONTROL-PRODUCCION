@@ -46,11 +46,21 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
   bool _isAutocompletePick = false;
 
   static const List<String> _areas = [
+    'M1',
+    'M2',
+    'M3',
+    'M4',
+    'D1',
+    'D2',
+    'D3',
+    'CALIDAD',
+    'MANTENIMIENTO',
     'SMD',
     'IMD',
-    'Assy',
-    'Componente',
-    'Mantenimiento'
+    'IPM',
+    'COATING',
+    'PROVEEDOR',
+    'COMPONENTE',
   ];
 
   String tr(String key) => widget.languageProvider.tr(key);

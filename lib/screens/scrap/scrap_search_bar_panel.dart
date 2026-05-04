@@ -28,7 +28,7 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
   DateTime? _endDate;
   String? _selectedArea;
 
-  static const List<String> _areas = ['SMD', 'IMD', 'Assy', 'Componente', 'Mantenimiento'];
+  static const List<String> _areas = ['M1', 'M2', 'M3', 'M4', 'D1', 'D2', 'D3', 'CALIDAD', 'MANTENIMIENTO', 'SMD', 'IMD', 'IPM', 'COATING', 'PROVEEDOR', 'COMPONENTE'];
 
   String tr(String key) => widget.languageProvider.tr(key);
 

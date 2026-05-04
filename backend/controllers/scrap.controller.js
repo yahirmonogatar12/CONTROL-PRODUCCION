@@ -50,7 +50,7 @@ async function lookupModelo(partNo) {
   }
 }
 
-const VALID_AREAS = ['SMD', 'IMD', 'Assy', 'Componente', 'Mantenimiento'];
+const VALID_AREAS = ['M1', 'M2', 'M3', 'M4', 'D1', 'D2', 'D3', 'CALIDAD', 'MANTENIMIENTO', 'SMD', 'IMD', 'IPM', 'COATING', 'PROVEEDOR', 'COMPONENTE'];
 
 // ============================================
 // POST /api/scrap/scan
@@ -262,7 +262,7 @@ exports.autocomplete = async (req, res, next) => {
 
     const searchTerm = `%${q.trim()}%`;
 
-    if (area === 'Componente') {
+    if (area === 'COMPONENTE') {
       // Buscar en tabla materiales por numero_parte o especificacion
       const [rows] = await pool.query(
         `SELECT DISTINCT 
