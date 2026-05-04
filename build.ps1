@@ -302,7 +302,7 @@ if (-not $SkipInstaller) {
 #define OutputDir "$DistDir"
 
 [Setup]
-AppId={{F3A1D7E9-5B42-4C86-A9F0-7E3B1C8D2A45}
+AppId={{06D44348-0F3D-439B-BEBF-48537ECA104F}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
