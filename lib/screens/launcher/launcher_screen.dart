@@ -232,7 +232,7 @@ class _LauncherScreenState extends State<LauncherScreen> with SingleTickerProvid
             
             // Título
             const Text(
-              'Control de Rollos',
+              'Control de Producción',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -242,7 +242,7 @@ class _LauncherScreenState extends State<LauncherScreen> with SingleTickerProvid
             ),
             const SizedBox(height: 8),
             Text(
-              'Control de Produccion',
+              'Sistema MES',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.white.withOpacity(0.5),
