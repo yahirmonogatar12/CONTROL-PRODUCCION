@@ -43,6 +43,7 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
     'area',
     'motivo_scrap_texto',
     'comentarios',
+    'cantidad',
     'usuario_registro',
     'fecha',
     'hora',
@@ -58,6 +59,7 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
         tr('scrap_area'),
         tr('scrap_motivo'),
         tr('scrap_comentarios'),
+        'Cantidad',
         tr('scrap_registered_by'),
         tr('scrap_date'),
         tr('scrap_time'),
@@ -69,8 +71,8 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
   @override
   void initState() {
     super.initState();
-    initColumnFlex(10, 'scrap_grid',
-        defaultFlexValues: [2.5, 1.0, 1.5, 1.5, 1.2, 2.0, 1.5, 1.2, 1.2, 1.0]);
+    initColumnFlex(11, 'scrap_grid',
+        defaultFlexValues: [2.5, 1.0, 1.5, 1.5, 1.2, 2.0, 1.5, 0.8, 1.2, 1.2, 1.0]);
     _loadTodayData();
   }
 
