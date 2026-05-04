@@ -87,24 +87,24 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
 
     final headers = [
       tr('scrap_scanned_code'),
-      tr('scrap_assy_type'),
       tr('scrap_part_no'),
       tr('scrap_modelo'),
       tr('scrap_area'),
       tr('scrap_motivo'),
       tr('scrap_comentarios'),
+      'Cantidad',
       tr('scrap_registered_by'),
       tr('scrap_date'),
       tr('scrap_time'),
     ];
     final fields = [
       'scanned_original',
-      'assy_type',
       'part_no',
       'modelo',
       'area',
       'motivo_scrap_texto',
       'comentarios',
+      'cantidad',
       'usuario_registro',
       'fecha',
       'hora',

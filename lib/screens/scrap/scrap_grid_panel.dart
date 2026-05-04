@@ -37,7 +37,6 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
 
   static const _fields = [
     'scanned_original',
-    'assy_type',
     'part_no',
     'modelo',
     'area',
@@ -53,7 +52,6 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
 
   List<String> get _headers => [
         tr('scrap_scanned_code'),
-        tr('scrap_assy_type'),
         tr('scrap_part_no'),
         tr('scrap_modelo'),
         tr('scrap_area'),
@@ -71,8 +69,8 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
   @override
   void initState() {
     super.initState();
-    initColumnFlex(11, 'scrap_grid',
-        defaultFlexValues: [2.5, 1.0, 1.5, 1.5, 1.2, 2.0, 1.5, 0.8, 1.2, 1.2, 1.0]);
+    initColumnFlex(10, 'scrap_grid',
+        defaultFlexValues: [2.5, 1.5, 1.5, 1.2, 2.0, 1.5, 0.8, 1.2, 1.2, 1.0]);
     _loadTodayData();
   }
 
