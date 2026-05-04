@@ -8,7 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// Configuración de GitHub para actualizaciones
 class GitHubConfig {
   static const String owner = 'yahirmonogatar12';
-  static const String repo = 'CONTROL-ROLLOS';
+  static const String repo = 'CONTROL-PRODUCCION';
   static const String apiUrl = 'https://api.github.com/repos/$owner/$repo/releases/latest';
   static const String downloadUrl = 'https://github.com/$owner/$repo/releases/download';
 }
@@ -183,7 +183,7 @@ class UpdateService {
         Uri.parse(GitHubConfig.apiUrl),
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'CONTROL-ROLLOS-App',
+          'User-Agent': 'CONTROL-PRODUCCION-App',
         },
       ).timeout(const Duration(seconds: 15));
       
