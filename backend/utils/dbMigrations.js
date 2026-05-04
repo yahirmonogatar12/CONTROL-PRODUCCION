@@ -843,6 +843,7 @@ async function runMigrations() {
   await createScrapMotivosTable();
   await createScrapRecordsTable();
   await migrateScrapAreaColumn();
+  await addColumnIfNotExists('scrap_records', 'cantidad', 'INT NOT NULL DEFAULT 1 AFTER usuario_registro');
 
   // Reportar tablas faltantes una sola vez
   if (_missingTablesCache.size > 0) {
@@ -1026,6 +1027,7 @@ async function createScrapRecordsTable() {
         motivo_scrap_texto VARCHAR(200) NULL,
         comentarios TEXT NULL,
         usuario_registro VARCHAR(100) NULL,
+        cantidad INT NOT NULL DEFAULT 1,
         fecha_registro DATETIME NOT NULL,
         INDEX idx_fecha (fecha_registro),
         INDEX idx_area (area),

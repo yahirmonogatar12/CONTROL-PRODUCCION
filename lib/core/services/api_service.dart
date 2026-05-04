@@ -4317,6 +4317,7 @@ class ApiService {
     required int motivoScrapId,
     String? comentarios,
     String? usuario,
+    int cantidad = 1,
   }) async {
     try {
       final response = await http.post(
@@ -4328,6 +4329,7 @@ class ApiService {
           'motivo_scrap_id': motivoScrapId,
           'comentarios': comentarios,
           'usuario': usuario,
+          'cantidad': cantidad,
         }),
       );
       final body = json.decode(response.body);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +27,7 @@ class ScrapFormPanel extends StatefulWidget {
 class ScrapFormPanelState extends State<ScrapFormPanel> {
   final TextEditingController _scanController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _qtyController = TextEditingController(text: '1');
   final FocusNode _scanFocusNode = FocusNode();
   final LayerLink _layerLink = LayerLink();
 
@@ -80,6 +82,7 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
     _hideOverlay();
     _scanController.dispose();
     _commentController.dispose();
+    _qtyController.dispose();
     _scanFocusNode.dispose();
     super.dispose();
   }
@@ -304,6 +307,7 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
       comentarios:
           _commentController.text.isNotEmpty ? _commentController.text : null,
       usuario: AuthService.currentUser?.nombreCompleto,
+      cantidad: int.tryParse(_qtyController.text) ?? 1,
     );
 
     if (mounted) {
@@ -316,6 +320,7 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
           _statusIsError = false;
         });
         _scanController.clear();
+        _qtyController.text = '1';
         _saveLocalPrefs();
         widget.onDataSaved();
       } else {
@@ -477,6 +482,23 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
                   decoration: fieldDecoration(),
                   style: const TextStyle(fontSize: 14),
                   onChanged: (_) => _saveLocalPrefs(),
+                ),
+              ),
+              const SizedBox(width: 24),
+              SizedBox(
+                width: 60,
+                child: Text('Cantidad',
+                    style: const TextStyle(fontSize: 14, color: Colors.white)),
+              ),
+              SizedBox(
+                width: 80,
+                child: TextFormField(
+                  controller: _qtyController,
+                  decoration: fieldDecoration(),
+                  style: const TextStyle(fontSize: 14),
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 ),
               ),
             ],

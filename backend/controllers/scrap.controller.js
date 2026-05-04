@@ -58,7 +58,8 @@ const VALID_AREAS = ['M1', 'M2', 'M3', 'M4', 'D1', 'D2', 'D3', 'CALIDAD', 'MANTE
 // ============================================
 exports.scan = async (req, res, next) => {
   try {
-    const { scanned_code, area, motivo_scrap_id, comentarios, usuario } = req.body;
+    const { scanned_code, area, motivo_scrap_id, comentarios, usuario, cantidad } = req.body;
+    const qtyVal = Math.max(1, parseInt(cantidad) || 1);
 
     if (!scanned_code || !scanned_code.trim()) {
       return res.status(400).json({
@@ -143,8 +144,8 @@ exports.scan = async (req, res, next) => {
 
     const [result] = await pool.query(
       `INSERT INTO scrap_records 
-        (scanned_original, scanned_original_norm, assy_type, part_no, modelo, area, motivo_scrap_id, motivo_scrap_texto, comentarios, usuario_registro, fecha_registro)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (scanned_original, scanned_original_norm, assy_type, part_no, modelo, area, motivo_scrap_id, motivo_scrap_texto, comentarios, usuario_registro, fecha_registro, cantidad)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         scannedOriginal,
         scannedOriginalNorm,
@@ -157,6 +158,7 @@ exports.scan = async (req, res, next) => {
         comentarios || null,
         usuario || null,
         ahora,
+        qtyVal,
       ]
     );
 
