@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:control_produccion_flutter/core/localization/app_translations.dart';
 import 'package:control_produccion_flutter/core/theme/app_colors.dart';
 import 'package:control_produccion_flutter/core/services/excel_export_service.dart';
+import 'package:control_produccion_flutter/core/widgets/date_range_filter.dart';
 import 'produccion_grid_panel.dart';
 
 class ProduccionSearchBarPanel extends StatefulWidget {
@@ -41,41 +42,12 @@ class _ProduccionSearchBarPanelState extends State<ProduccionSearchBarPanel> {
     _fechaInicioController.text = _formatDate(_fechaInicio);
     _fechaFinController.text = _formatDate(_fechaFin);
   }
-  
+
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
-  Future<void> _selectFechaInicio() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _fechaInicio,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      setState(() {
-        _fechaInicio = picked;
-        _fechaInicioController.text = _formatDate(picked);
-      });
-    }
-  }
-  
-  Future<void> _selectFechaFin() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _fechaFin,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      setState(() {
-        _fechaFin = picked;
-        _fechaFinController.text = _formatDate(picked);
-      });
-    }
-  }
-  
+
   void _onSearchPressed() {
     final texto = _lotNoController.text.isNotEmpty ? _lotNoController.text : null;
     if (_filterEnabled) {
@@ -191,6 +163,22 @@ class _ProduccionSearchBarPanelState extends State<ProduccionSearchBarPanel> {
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       child: Row(
         children: [
+          DateRangeFilter(
+            startDate: _fechaInicio,
+            endDate: _fechaFin,
+            enabled: _filterEnabled,
+            label: tr('warehousing_date'),
+            onEnabledChanged: (v) => setState(() => _filterEnabled = v),
+            onStartChanged: (d) => setState(() {
+              _fechaInicio = d;
+              _fechaInicioController.text = _formatDate(d);
+            }),
+            onEndChanged: (d) => setState(() {
+              _fechaFin = d;
+              _fechaFinController.text = _formatDate(d);
+            }),
+          ),
+          const SizedBox(width: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
@@ -199,63 +187,6 @@ class _ProduccionSearchBarPanelState extends State<ProduccionSearchBarPanel> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Checkbox(
-                  value: _filterEnabled,
-                  onChanged: (v) => setState(() => _filterEnabled = v ?? true),
-                  side: const BorderSide(color: AppColors.border),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  tr('warehousing_date'),
-                  style: const TextStyle(fontSize: 11),
-                ),
-                const SizedBox(width: 4),
-                // Fecha inicio
-                SizedBox(
-                  width: 100,
-                  child: InkWell(
-                    onTap: _selectFechaInicio,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.fieldBackground,
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(_formatDate(_fechaInicio), style: const TextStyle(fontSize: 11)),
-                          const Icon(Icons.calendar_today, size: 14, color: Colors.white70),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Text('~', style: TextStyle(fontSize: 12)),
-                const SizedBox(width: 4),
-                // Fecha fin
-                SizedBox(
-                  width: 100,
-                  child: InkWell(
-                    onTap: _selectFechaFin,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.fieldBackground,
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(_formatDate(_fechaFin), style: const TextStyle(fontSize: 11)),
-                          const Icon(Icons.calendar_today, size: 14, color: Colors.white70),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Text(tr('lot_no'), style: const TextStyle(fontSize: 11)),
                 const SizedBox(width: 4),
                 SizedBox(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:control_produccion_flutter/core/localization/app_translations.dart';
 import 'package:control_produccion_flutter/core/theme/app_colors.dart';
 import 'package:control_produccion_flutter/core/services/excel_export_service.dart';
+import 'package:control_produccion_flutter/core/widgets/date_range_filter.dart';
 import 'scrap_grid_panel.dart';
 
 class ScrapSearchBarPanel extends StatefulWidget {
@@ -21,57 +22,30 @@ class ScrapSearchBarPanel extends StatefulWidget {
 }
 
 class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
-  final TextEditingController _startDateCtrl = TextEditingController();
-  final TextEditingController _endDateCtrl = TextEditingController();
-  bool _useDateFilter = false;
-  DateTime? _startDate;
-  DateTime? _endDate;
+  bool _useDateFilter = true;
+  DateTime _startDate = DateTime.now();
+  DateTime _endDate = DateTime.now();
   String? _selectedArea;
 
-  static const List<String> _areas = ['M1', 'M2', 'M3', 'M4', 'D1', 'D2', 'D3', 'CALIDAD', 'MANTENIMIENTO', 'SMD', 'IMD', 'IPM', 'COATING', 'PROVEEDOR', 'COMPONENTE'];
+  static const List<String> _areas = [
+    'M1',
+    'M2',
+    'M3',
+    'M4',
+    'D1',
+    'D2',
+    'D3',
+    'CALIDAD',
+    'MANTENIMIENTO',
+    'SMD',
+    'IMD',
+    'IPM',
+    'COATING',
+    'PROVEEDOR',
+    'COMPONENTE'
+  ];
 
   String tr(String key) => widget.languageProvider.tr(key);
-
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    _startDate = now;
-    _endDate = now;
-    _startDateCtrl.text = _fmt(now);
-    _endDateCtrl.text = _fmt(now);
-  }
-
-  @override
-  void dispose() {
-    _startDateCtrl.dispose();
-    _endDateCtrl.dispose();
-    super.dispose();
-  }
-
-  String _fmt(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  Future<void> _pickDate(bool isStart) async {
-    final initial = isStart ? (_startDate ?? DateTime.now()) : (_endDate ?? DateTime.now());
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2030),
-    );
-    if (picked != null && mounted) {
-      setState(() {
-        if (isStart) {
-          _startDate = picked;
-          _startDateCtrl.text = _fmt(picked);
-        } else {
-          _endDate = picked;
-          _endDateCtrl.text = _fmt(picked);
-        }
-      });
-    }
-  }
 
   void _doSearch() {
     widget.onSearch(
@@ -129,59 +103,14 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
       ),
       child: Row(
         children: [
-          // Checkbox rango fecha
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: Checkbox(
-              value: _useDateFilter,
-              onChanged: (v) => setState(() => _useDateFilter = v ?? false),
-              side: const BorderSide(color: AppColors.border),
-              activeColor: Colors.blue,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(tr('scrap_date_range'), style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          const SizedBox(width: 6),
-          // Fecha inicio
-          SizedBox(
-            width: 110,
-            height: 32,
-            child: TextField(
-              controller: _startDateCtrl,
-              readOnly: true,
-              enabled: _useDateFilter,
-              onTap: () => _pickDate(true),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border)),
-                disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border.withOpacity(0.3))),
-              ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Text('-', style: TextStyle(color: Colors.white54)),
-          ),
-          // Fecha fin
-          SizedBox(
-            width: 110,
-            height: 32,
-            child: TextField(
-              controller: _endDateCtrl,
-              readOnly: true,
-              enabled: _useDateFilter,
-              onTap: () => _pickDate(false),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border)),
-                disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border.withOpacity(0.3))),
-              ),
-            ),
+          DateRangeFilter(
+            startDate: _startDate,
+            endDate: _endDate,
+            enabled: _useDateFilter,
+            label: tr('scrap_date_range'),
+            onEnabledChanged: (v) => setState(() => _useDateFilter = v),
+            onStartChanged: (d) => setState(() => _startDate = d),
+            onEndChanged: (d) => setState(() => _endDate = d),
           ),
           const SizedBox(width: 12),
           // Area filter
@@ -194,19 +123,28 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: tr('scrap_area'),
-                labelStyle: const TextStyle(color: Colors.white54, fontSize: 11),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppColors.border)),
+                labelStyle:
+                    const TextStyle(color: Colors.white54, fontSize: 11),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: BorderSide(color: AppColors.border)),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: BorderSide(color: AppColors.border)),
               ),
               dropdownColor: AppColors.panelBackground,
               style: const TextStyle(color: Colors.white, fontSize: 12),
               items: [
                 DropdownMenuItem<String>(
                   value: null,
-                  child: Text(tr('scrap_all'), style: const TextStyle(fontSize: 12)),
+                  child: Text(tr('scrap_all'),
+                      style: const TextStyle(fontSize: 12)),
                 ),
-                ..._areas.map((a) => DropdownMenuItem(value: a, child: Text(a, style: const TextStyle(fontSize: 12)))),
+                ..._areas.map((a) => DropdownMenuItem(
+                    value: a,
+                    child: Text(a, style: const TextStyle(fontSize: 12)))),
               ],
               onChanged: (val) => setState(() => _selectedArea = val),
             ),
@@ -218,7 +156,8 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
             child: ElevatedButton.icon(
               onPressed: _doSearch,
               icon: const Icon(Icons.search, size: 14),
-              label: Text(tr('scrap_search'), style: const TextStyle(fontSize: 12)),
+              label: Text(tr('scrap_search'),
+                  style: const TextStyle(fontSize: 12)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
@@ -233,7 +172,8 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
             child: OutlinedButton.icon(
               onPressed: _exportExcel,
               icon: const Icon(Icons.download, size: 14, color: Colors.green),
-              label: Text('Excel', style: const TextStyle(fontSize: 12, color: Colors.green)),
+              label: Text('Excel',
+                  style: const TextStyle(fontSize: 12, color: Colors.green)),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.green),
                 padding: const EdgeInsets.symmetric(horizontal: 12),

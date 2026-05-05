@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:control_produccion_flutter/core/localization/app_translations.dart';
 import 'package:control_produccion_flutter/core/theme/app_colors.dart';
 import 'package:control_produccion_flutter/core/widgets/field_decoration.dart';
+import 'package:control_produccion_flutter/core/widgets/table_dropdown_field.dart';
 import 'package:control_produccion_flutter/core/services/api_service.dart';
 import 'package:control_produccion_flutter/core/services/auth_service.dart';
 
@@ -30,6 +31,9 @@ class PcbSalidaFormPanelState extends State<PcbSalidaFormPanel> {
   String _selectedProceso = 'SMD';
   String _selectedArea = 'INVENTARIO';
   String _tipoMovimiento = 'SALIDA'; // SALIDA or SCRAP
+  List<Map<String, dynamic>> _users = [];
+  int? _selectedUserId;
+  String? _selectedUserName;
   DateTime _inventoryDate = DateTime.now();
   bool _isLoading = false;
   String? _statusMessage;
@@ -51,7 +55,9 @@ class PcbSalidaFormPanelState extends State<PcbSalidaFormPanel> {
   void initState() {
     super.initState();
     _dateController.text = _formattedDate;
+    _setDefaultUser();
     _loadLocalPrefs();
+    _loadUsers();
   }
 
   @override
@@ -104,6 +110,69 @@ class PcbSalidaFormPanelState extends State<PcbSalidaFormPanel> {
     } catch (_) {}
   }
 
+  void _setDefaultUser() {
+    final currentUser = AuthService.currentUser;
+    if (currentUser == null) return;
+    _selectedUserId = currentUser.id;
+    _selectedUserName = currentUser.nombreCompleto.isNotEmpty
+        ? currentUser.nombreCompleto
+        : currentUser.username;
+  }
+
+  int? _parseUserId(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  String _userName(Map<String, dynamic> user) {
+    final fullName = user['nombre_completo']?.toString().trim() ?? '';
+    if (fullName.isNotEmpty) return fullName;
+    return user['username']?.toString().trim() ?? '';
+  }
+
+  Future<void> _loadUsers() async {
+    final result = await ApiService.getUsers();
+    final users = result.where((user) {
+      final active = user['activo']?.toString().toLowerCase();
+      return active != '0' && active != 'false';
+    }).toList();
+    if (!mounted) return;
+    setState(() {
+      _users = users;
+      if (_selectedUserId != null &&
+          !_users.any((user) => _parseUserId(user['id']) == _selectedUserId)) {
+        _setDefaultUser();
+      }
+    });
+  }
+
+  List<List<String>> get _userRows {
+    return _users.map((user) {
+      return [
+        user['id']?.toString() ?? '',
+        _userName(user),
+      ];
+    }).toList();
+  }
+
+  String get _selectedUserDisplay {
+    if (_selectedUserId == null || (_selectedUserName ?? '').isEmpty) {
+      return '';
+    }
+    return '$_selectedUserId - $_selectedUserName';
+  }
+
+  String? get _selectedScannedBy {
+    final selected = _selectedUserName?.trim() ?? '';
+    if (selected.isNotEmpty) return selected;
+    final currentUser = AuthService.currentUser;
+    if (currentUser == null) return null;
+    return currentUser.nombreCompleto.isNotEmpty
+        ? currentUser.nombreCompleto
+        : currentUser.username;
+  }
+
   Future<void> _onScan() async {
     final code = _scanController.text.trim();
     if (code.isEmpty) return;
@@ -141,7 +210,7 @@ class PcbSalidaFormPanelState extends State<PcbSalidaFormPanel> {
       manualQtyConfirmed: manualQtyConfirmed,
       comentarios:
           _commentController.text.isNotEmpty ? _commentController.text : null,
-      scannedBy: AuthService.currentUser?.nombreCompleto,
+      scannedBy: _selectedScannedBy,
     );
 
     if (mounted) {
@@ -369,15 +438,42 @@ class PcbSalidaFormPanelState extends State<PcbSalidaFormPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final userRows = _userRows;
+
     return Container(
       color: AppColors.subPanelBackground,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Fila 1: Tipo selector + Fecha
+          // Fila 1: Usuario + Tipo selector + Fecha
           Row(
             children: [
+              SizedBox(
+                width: 100,
+                child: Text(tr('pcb_scanned_by'),
+                    style: const TextStyle(fontSize: 14, color: Colors.white)),
+              ),
+              SizedBox(
+                width: 260,
+                child: TableDropdownField(
+                  value: _selectedUserDisplay,
+                  headers: ['ID', tr('full_name')],
+                  rows: userRows,
+                  tableWidth: 420,
+                  tableHeight: 320,
+                  onRowSelected: (index) {
+                    if (index < 0 || index >= _users.length) return;
+                    final user = _users[index];
+                    setState(() {
+                      _selectedUserId = _parseUserId(user['id']);
+                      _selectedUserName = _userName(user);
+                    });
+                    requestScanFocus();
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
               SizedBox(
                 width: 60,
                 child: Text(tr('pcb_tipo_movimiento'),

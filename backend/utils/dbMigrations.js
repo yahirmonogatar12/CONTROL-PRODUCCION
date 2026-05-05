@@ -673,6 +673,21 @@ async function migratePcbInventorySchema() {
     'component_location',
     'VARCHAR(120) NULL AFTER defect_type'
   );
+  await addColumnIfNotExists(
+    'pcb_inventory_scan_prod',
+    'etapa_deteccion',
+    "ENUM('LQC','OQC','AIS') NULL AFTER component_location"
+  );
+  await addColumnIfNotExists(
+    'pcb_inventory_scan_prod',
+    'defect_source_area',
+    'VARCHAR(50) NULL AFTER etapa_deteccion'
+  );
+  await addColumnIfNotExists(
+    'pcb_inventory_scan_prod',
+    'defect_data_id',
+    'VARCHAR(50) NULL AFTER defect_source_area'
+  );
 
   try {
     const [procesoCols] = await pool.query(`

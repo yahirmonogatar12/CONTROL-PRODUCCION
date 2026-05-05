@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:control_produccion_flutter/core/localization/app_translations.dart';
 import 'package:control_produccion_flutter/core/theme/app_colors.dart';
 import 'package:control_produccion_flutter/core/services/excel_export_service.dart';
+import 'package:control_produccion_flutter/core/widgets/date_range_filter.dart';
 import 'pcb_entrada_grid_panel.dart';
 
 class PcbEntradaSearchBarPanel extends StatefulWidget {
@@ -22,56 +23,17 @@ class PcbEntradaSearchBarPanel extends StatefulWidget {
 }
 
 class _PcbEntradaSearchBarPanelState extends State<PcbEntradaSearchBarPanel> {
-  final TextEditingController _startDateCtrl = TextEditingController();
-  final TextEditingController _endDateCtrl = TextEditingController();
   final TextEditingController _partNumberCtrl = TextEditingController();
-  bool _useDateFilter = false;
-  DateTime? _startDate;
-  DateTime? _endDate;
+  bool _useDateFilter = true;
+  DateTime _startDate = DateTime.now();
+  DateTime _endDate = DateTime.now();
 
   String tr(String key) => widget.languageProvider.tr(key);
 
   @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    _startDate = now;
-    _endDate = now;
-    _startDateCtrl.text = _fmt(now);
-    _endDateCtrl.text = _fmt(now);
-  }
-
-  @override
   void dispose() {
-    _startDateCtrl.dispose();
-    _endDateCtrl.dispose();
     _partNumberCtrl.dispose();
     super.dispose();
-  }
-
-  String _fmt(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  Future<void> _pickDate(bool isStart) async {
-    final initial =
-        isStart ? (_startDate ?? DateTime.now()) : (_endDate ?? DateTime.now());
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2030),
-    );
-    if (picked != null && mounted) {
-      setState(() {
-        if (isStart) {
-          _startDate = picked;
-          _startDateCtrl.text = _fmt(picked);
-        } else {
-          _endDate = picked;
-          _endDateCtrl.text = _fmt(picked);
-        }
-      });
-    }
   }
 
   void _doSearch() {
@@ -92,6 +54,8 @@ class _PcbEntradaSearchBarPanelState extends State<PcbEntradaSearchBarPanel> {
       tr('pcb_scanned_code'),
       tr('pcb_area'),
       tr('pcb_defect_type'),
+      tr('pcb_etapa_deteccion'),
+      tr('pcb_source_area'),
       tr('pcb_component_location'),
       tr('pcb_qty'),
       tr('pcb_array_count'),
@@ -107,6 +71,8 @@ class _PcbEntradaSearchBarPanelState extends State<PcbEntradaSearchBarPanel> {
       'scanned_original',
       'area',
       'defect_type',
+      'etapa_deteccion',
+      'defect_source_area',
       'component_location',
       'qty',
       'array_count',
@@ -138,76 +104,14 @@ class _PcbEntradaSearchBarPanelState extends State<PcbEntradaSearchBarPanel> {
       ),
       child: Row(
         children: [
-          // Checkbox rango fecha
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: Checkbox(
-              value: _useDateFilter,
-              onChanged: (v) => setState(() => _useDateFilter = v ?? false),
-              side: const BorderSide(color: AppColors.border),
-              activeColor: Colors.blue,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(tr('pcb_date_range'),
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          const SizedBox(width: 6),
-          // Fecha inicio
-          SizedBox(
-            width: 110,
-            height: 32,
-            child: TextField(
-              controller: _startDateCtrl,
-              readOnly: true,
-              enabled: _useDateFilter,
-              onTap: () => _pickDate(true),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide: BorderSide(color: AppColors.border)),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide: BorderSide(color: AppColors.border)),
-                disabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide:
-                        BorderSide(color: AppColors.border.withOpacity(0.3))),
-              ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Text('-', style: TextStyle(color: Colors.white54)),
-          ),
-          // Fecha fin
-          SizedBox(
-            width: 110,
-            height: 32,
-            child: TextField(
-              controller: _endDateCtrl,
-              readOnly: true,
-              enabled: _useDateFilter,
-              onTap: () => _pickDate(false),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide: BorderSide(color: AppColors.border)),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide: BorderSide(color: AppColors.border)),
-                disabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide:
-                        BorderSide(color: AppColors.border.withOpacity(0.3))),
-              ),
-            ),
+          DateRangeFilter(
+            startDate: _startDate,
+            endDate: _endDate,
+            enabled: _useDateFilter,
+            label: tr('pcb_date_range'),
+            onEnabledChanged: (v) => setState(() => _useDateFilter = v),
+            onStartChanged: (d) => setState(() => _startDate = d),
+            onEndChanged: (d) => setState(() => _endDate = d),
           ),
           const SizedBox(width: 12),
           // Part Number search

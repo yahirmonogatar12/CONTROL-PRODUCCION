@@ -83,6 +83,7 @@ const shortageRoutes = require('./routes/shortage.routes');
 // Fase 13: PCB Inventory (Inventario de PCBs por escaneo)
 const pcbInventoryRoutes = require('./routes/pcb-inventory.routes');
 const pcbDefectsRoutes = require('./routes/pcb-defects.routes');
+const defectDataRoutes = require('./routes/defect-data.routes');
 
 // Fase 14: Scrap (Control de scrap por escaneo QR)
 const scrapRoutes = require('./routes/scrap.routes');
@@ -161,6 +162,7 @@ app.use('/api/shortage', shortageRoutes);
 // Fase 13: PCB Inventory (Inventario de PCBs por escaneo)
 app.use('/api/pcb-inventory', pcbInventoryRoutes);
 app.use('/api/pcb-defects', pcbDefectsRoutes);
+app.use('/api/defect-data', defectDataRoutes);
 
 // Fase 14: Scrap (Control de scrap por escaneo QR)
 app.use('/api/scrap', scrapRoutes);
