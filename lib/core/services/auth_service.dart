@@ -373,6 +373,13 @@ class AuthService {
     if (hasFullAccess) return true;
     return hasPermission('manage_scrap_motivos');
   }
+
+  /// Verifica si el usuario puede editar el historial de scrap
+  static bool get canEditScrapHistory {
+    if (_currentUser == null) return false;
+    if (hasFullAccess) return true;
+    return hasPermission('edit_scrap_history');
+  }
   // ============================================
   // CARGA DE PERMISOS
   // ============================================

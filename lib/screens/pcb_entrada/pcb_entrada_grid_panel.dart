@@ -37,6 +37,7 @@ class PcbEntradaGridPanelState extends State<PcbEntradaGridPanel>
 
   static const _fields = [
     'scanned_original',
+    'linea_salida_pcb',
     'area',
     'defect_type',
     'etapa_deteccion',
@@ -52,12 +53,13 @@ class PcbEntradaGridPanelState extends State<PcbEntradaGridPanel>
     'scanned_by',
   ];
 
-  static const int _etapaColIdx = 3;
+  static const int _etapaColIdx = 4;
 
   String tr(String key) => widget.languageProvider.tr(key);
 
   List<String> get _headers => [
         tr('pcb_scanned_code'),
+        tr('pcb_linea_salida'),
         tr('pcb_area'),
         tr('pcb_defect_type'),
         tr('pcb_etapa_deteccion'),
@@ -92,8 +94,9 @@ class PcbEntradaGridPanelState extends State<PcbEntradaGridPanel>
   @override
   void initState() {
     super.initState();
-    initColumnFlex(14, 'pcb_entrada_grid', defaultFlexValues: [
+    initColumnFlex(15, 'pcb_entrada_grid', defaultFlexValues: [
       2.5,
+      0.9,
       1.0,
       1.4,
       0.7,

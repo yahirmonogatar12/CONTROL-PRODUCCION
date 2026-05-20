@@ -5,6 +5,9 @@
 const router = require('express').Router();
 const ctrl = require('../controllers/pcb-inventory.controller');
 
+// GET /api/pcb-inventory/lookup-linea-salida - Buscar linea por barcode en history_vision
+router.get('/lookup-linea-salida', ctrl.lookupLineaSalida);
+
 // POST /api/pcb-inventory/scan - Registrar escaneo
 router.post('/scan', ctrl.scan);
 

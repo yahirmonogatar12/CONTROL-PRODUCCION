@@ -6,7 +6,7 @@
  * Pantalla Flutter: lib/screens/pcb_inventory/
  */
 
-const { pool, getMexicoDateTime } = require('../config/database');
+const { pool, getMexicoDateTime, getMexicoDate } = require('../config/database');
 
 // ============================================
 // HELPERS
@@ -169,6 +169,111 @@ async function getInitialStockOption(connection, pcbPartNo) {
 
 const VALID_ARRAY_ROLES = ['SINGLE', 'DEFECT', 'ARRAY_ITEM'];
 
+// Lineas validas para linea_salida_pcb. Si history_vision retorna una maquina
+// fuera de esta lista, el endpoint indica found=false para que el usuario la
+// capture manualmente.
+const VALID_LINEAS_SALIDA = ['M1', 'M2', 'M3', 'M4', 'DP1', 'DP2', 'DP3', 'H1'];
+
+// ============================================
+// GET /api/pcb-inventory/lookup-linea-salida?codigo=...
+// Consulta history_vision por la ultima maquina (linea) que escaneo el PCB.
+// Responde { success, found, linea } donde linea esta normalizada a una de
+// VALID_LINEAS_SALIDA. Si la maquina detectada no esta en la lista, found=false.
+// ============================================
+exports.lookupLineaSalida = async (req, res, next) => {
+  try {
+    const codigo = (req.query.codigo || '').toString().trim();
+    if (!codigo) {
+      return res.status(400).json({
+        success: false,
+        found: false,
+        message: 'codigo es requerido',
+      });
+    }
+    const norm = normalizeCode(codigo);
+    const raw = codigo.trim();
+
+    // 1) history_vision.barcode (case-insensitive)
+    let rawMachine = null;
+    let source = null;
+    try {
+      const [vRows] = await pool.query(
+        `SELECT machine_name
+         FROM history_vision
+         WHERE UPPER(barcode) = ?
+         ORDER BY captured_at_utc DESC, id DESC
+         LIMIT 1`,
+        [norm]
+      );
+      if (vRows.length > 0 && vRows[0].machine_name) {
+        rawMachine = vRows[0].machine_name;
+        source = 'history_vision.barcode';
+      }
+    } catch (e) {
+      // history_vision puede no existir en algunos ambientes
+    }
+
+    // 2) history_vision.qr_payload (a veces el codigo coincide con el payload
+    // crudo del QR en lugar del barcode normalizado)
+    if (!rawMachine) {
+      try {
+        const [vRows] = await pool.query(
+          `SELECT machine_name
+           FROM history_vision
+           WHERE UPPER(qr_payload) = UPPER(?) OR UPPER(qr_payload) = ?
+           ORDER BY captured_at_utc DESC, id DESC
+           LIMIT 1`,
+          [raw, norm]
+        );
+        if (vRows.length > 0 && vRows[0].machine_name) {
+          rawMachine = vRows[0].machine_name;
+          source = 'history_vision.qr_payload';
+        }
+      } catch (e) {
+        // qr_payload puede no existir
+      }
+    }
+
+    // 3) Fallback a history_ict.barcode (case-insensitive)
+    if (!rawMachine) {
+      try {
+        const [iRows] = await pool.query(
+          `SELECT linea
+           FROM history_ict
+           WHERE UPPER(barcode) = ?
+           ORDER BY ts DESC, id DESC
+           LIMIT 1`,
+          [norm]
+        );
+        if (iRows.length > 0 && iRows[0].linea) {
+          rawMachine = iRows[0].linea;
+          source = 'history_ict';
+        }
+      } catch (e) {
+        // history_ict puede no existir en algunos ambientes
+      }
+    }
+
+    if (!rawMachine) {
+      return res.json({ success: true, found: false, linea: null });
+    }
+
+    const lineaNorm = rawMachine.toString().trim().toUpperCase()
+      .replace(/[\s\-_]+/g, '');
+    const matched = VALID_LINEAS_SALIDA.includes(lineaNorm) ? lineaNorm : null;
+
+    return res.json({
+      success: true,
+      found: matched !== null,
+      linea: matched,
+      raw_machine_name: rawMachine,
+      source,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ============================================
 // POST /api/pcb-inventory/scan
 // Acepta tipo_movimiento: ENTRADA | SALIDA | SCRAP
@@ -195,6 +300,7 @@ exports.scan = async (req, res, next) => {
       etapa_deteccion,
       defect_source_area,
       defect_data_id,
+      linea_salida_pcb,
       manual_qty_confirmed
     } = req.body;
 
@@ -261,7 +367,7 @@ exports.scan = async (req, res, next) => {
       });
     }
 
-    const invDate = inventory_date || new Date().toISOString().slice(0, 10);
+    const invDate = inventory_date || getMexicoDate();
     const scannedOriginal = scanned_code.trim();
     const scannedOriginalNorm = normalizeCode(scanned_code);
     const arrayGroupCode = normalizeCode(array_group_code || scannedOriginal);
@@ -292,6 +398,26 @@ exports.scan = async (req, res, next) => {
     const defectDataIdVal = areaVal === 'REPARACION' && defect_data_id
       ? defect_data_id.toString().trim()
       : null;
+
+    let lineaSalidaVal = null;
+    if (tipo === 'ENTRADA') {
+      if (!linea_salida_pcb || !linea_salida_pcb.toString().trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'linea_salida_pcb es requerida para entradas',
+          code: 'MISSING_LINEA_SALIDA'
+        });
+      }
+      const lineaUpper = linea_salida_pcb.toString().trim().toUpperCase();
+      if (!VALID_LINEAS_SALIDA.includes(lineaUpper)) {
+        return res.status(400).json({
+          success: false,
+          message: `linea_salida_pcb debe ser uno de: ${VALID_LINEAS_SALIDA.join(', ')}`,
+          code: 'INVALID_LINEA_SALIDA'
+        });
+      }
+      lineaSalidaVal = lineaUpper;
+    }
 
     if (!VALID_ARRAY_ROLES.includes(roleVal)) {
       return res.status(400).json({
@@ -421,8 +547,8 @@ exports.scan = async (req, res, next) => {
           const ahora = getMexicoDateTime();
           const [result] = await connection.query(
             `INSERT INTO pcb_inventory_scan_prod
-              (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, etapa_deteccion, defect_source_area, defect_data_id, comentarios, scanned_by, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, etapa_deteccion, defect_source_area, defect_data_id, linea_salida_pcb, comentarios, scanned_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               invDate,
               row.scanned_original,
@@ -442,6 +568,7 @@ exports.scan = async (req, res, next) => {
               row.etapa_deteccion || null,
               row.defect_source_area || null,
               row.defect_data_id || null,
+              row.linea_salida_pcb || null,
               arrayComment,
               scanned_by || null,
               ahora,
@@ -560,8 +687,8 @@ exports.scan = async (req, res, next) => {
     const ahoraScan = getMexicoDateTime();
     const [result] = await connection.query(
       `INSERT INTO pcb_inventory_scan_prod
-        (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, etapa_deteccion, defect_source_area, defect_data_id, comentarios, scanned_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (inventory_date, scanned_original, scanned_original_norm, assy_type, pcb_part_no, modelo, proceso, area, tipo_movimiento, qty, array_count, array_group_code, array_role, defect_type, component_location, etapa_deteccion, defect_source_area, defect_data_id, linea_salida_pcb, comentarios, scanned_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         invDate,
         scannedOriginal,
@@ -581,6 +708,7 @@ exports.scan = async (req, res, next) => {
         etapaDeteccionVal,
         defectSourceAreaVal,
         defectDataIdVal,
+        lineaSalidaVal,
         comentarios || null,
         scanned_by || null,
         ahoraScan,
@@ -633,7 +761,7 @@ exports.bulkInitialStock = async (req, res, next) => {
       items,
     } = req.body;
 
-    const invDate = inventory_date || new Date().toISOString().slice(0, 10);
+    const invDate = inventory_date || getMexicoDate();
     const areaVal = area || 'INVENTARIO';
     if (!VALID_AREAS.includes(areaVal)) {
       return res.status(400).json({
@@ -881,6 +1009,7 @@ exports.getScans = async (req, res, next) => {
         comentarios,
         scanned_by,
         created_at,
+        linea_salida_pcb,
         DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') as created_at_fmt,
         DATE_FORMAT(created_at, '%H:%i:%s') as hora
       FROM pcb_inventory_scan_prod
@@ -901,6 +1030,136 @@ exports.getScans = async (req, res, next) => {
     params.push(maxLimit);
 
     const [rows] = await pool.query(query, params);
+
+    // Fallback para registros historicos sin linea_salida_pcb persistida:
+    // hacer un solo query batch a history_vision para los barcodes faltantes.
+    // (No es una subconsulta por fila como antes, asi que se mantiene rapido.)
+    const missingNorms = [...new Set(
+      rows
+        .filter(r => !r.linea_salida_pcb)
+        .map(r => normalizeCode(r.scanned_original))
+        .filter(Boolean)
+    )];
+
+    if (missingNorms.length > 0) {
+      // byKey indexa por la clave usada en la busqueda. Para vision.barcode
+      // y ict.barcode usamos el norm; para qr_payload puede ser norm o el
+      // valor original (en este batch ambos son el mismo norm porque las
+      // filas que llegan ya fueron normalizadas al insertarlas).
+      const byBarcode = new Map();
+      const placeholders = missingNorms.map(() => '?').join(', ');
+
+      // 1) Batch en history_vision.barcode (machine_name) - case-insensitive
+      try {
+        const [histVision] = await pool.query(
+          `SELECT UPPER(hv.barcode) AS barcode_upper, hv.machine_name
+           FROM history_vision hv
+           INNER JOIN (
+             SELECT UPPER(barcode) AS barcode_upper, MAX(captured_at_utc) AS max_ts
+             FROM history_vision
+             WHERE UPPER(barcode) IN (${placeholders})
+             GROUP BY UPPER(barcode)
+           ) latest
+             ON latest.barcode_upper = UPPER(hv.barcode)
+            AND latest.max_ts = hv.captured_at_utc`,
+          missingNorms
+        );
+        for (const h of histVision) {
+          if (h.machine_name) byBarcode.set(h.barcode_upper, h.machine_name);
+        }
+      } catch (e) {
+        console.log('Nota: fallback history_vision.barcode fallo:', e.message);
+      }
+
+      // 2) Batch en history_vision.qr_payload para los que aun faltan
+      let stillMissing = missingNorms.filter(n => !byBarcode.has(n));
+      if (stillMissing.length > 0) {
+        try {
+          const qpPlaceholders = stillMissing.map(() => '?').join(', ');
+          const [histQr] = await pool.query(
+            `SELECT UPPER(hv.qr_payload) AS qr_upper, hv.machine_name
+             FROM history_vision hv
+             INNER JOIN (
+               SELECT UPPER(qr_payload) AS qr_upper, MAX(captured_at_utc) AS max_ts
+               FROM history_vision
+               WHERE UPPER(qr_payload) IN (${qpPlaceholders})
+               GROUP BY UPPER(qr_payload)
+             ) latest
+               ON latest.qr_upper = UPPER(hv.qr_payload)
+              AND latest.max_ts = hv.captured_at_utc`,
+            stillMissing
+          );
+          for (const h of histQr) {
+            if (h.machine_name && h.qr_upper) {
+              byBarcode.set(h.qr_upper, h.machine_name);
+            }
+          }
+        } catch (e) {
+          console.log('Nota: fallback history_vision.qr_payload fallo:', e.message);
+        }
+      }
+
+      // 3) Batch en history_ict.barcode (linea) - case-insensitive
+      stillMissing = missingNorms.filter(n => !byBarcode.has(n));
+      if (stillMissing.length > 0) {
+        try {
+          const ictPlaceholders = stillMissing.map(() => '?').join(', ');
+          const [histIct] = await pool.query(
+            `SELECT UPPER(hi.barcode) AS barcode_upper, hi.linea
+             FROM history_ict hi
+             INNER JOIN (
+               SELECT UPPER(barcode) AS barcode_upper, MAX(ts) AS max_ts
+               FROM history_ict
+               WHERE UPPER(barcode) IN (${ictPlaceholders})
+               GROUP BY UPPER(barcode)
+             ) latest
+               ON latest.barcode_upper = UPPER(hi.barcode)
+              AND latest.max_ts = hi.ts`,
+            stillMissing
+          );
+          for (const h of histIct) {
+            if (h.linea) byBarcode.set(h.barcode_upper, h.linea);
+          }
+        } catch (e) {
+          console.log('Nota: fallback history_ict fallo:', e.message);
+        }
+      }
+
+      // Asignar y agrupar IDs a backfillear por linea normalizada.
+      // Solo persistir cuando cae en la lista oficial; si no, mostrar crudo.
+      const idsByLinea = new Map();
+      for (const r of rows) {
+        if (r.linea_salida_pcb) continue;
+        const norm = normalizeCode(r.scanned_original);
+        const machine = byBarcode.get(norm);
+        if (!machine) continue;
+
+        r.linea_salida_pcb = machine;
+
+        const lineaNorm = machine.toString().trim().toUpperCase()
+          .replace(/[\s\-_]+/g, '');
+        if (VALID_LINEAS_SALIDA.includes(lineaNorm)) {
+          if (!idsByLinea.has(lineaNorm)) idsByLinea.set(lineaNorm, []);
+          idsByLinea.get(lineaNorm).push(r.id);
+        }
+      }
+
+      // UPDATE en lote, una sentencia por linea unica.
+      for (const [linea, ids] of idsByLinea) {
+        if (ids.length === 0) continue;
+        const idPlaceholders = ids.map(() => '?').join(', ');
+        try {
+          await pool.query(
+            `UPDATE pcb_inventory_scan_prod
+             SET linea_salida_pcb = ?
+             WHERE id IN (${idPlaceholders}) AND linea_salida_pcb IS NULL`,
+            [linea, ...ids]
+          );
+        } catch (e) {
+          console.log('Nota: backfill linea_salida_pcb fallo:', e.message);
+        }
+      }
+    }
 
     res.json({
       success: true,

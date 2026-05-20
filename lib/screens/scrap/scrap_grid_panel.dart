@@ -6,8 +6,13 @@ import 'package:control_produccion_flutter/core/widgets/resizable_grid_header.da
 
 class ScrapGridPanel extends StatefulWidget {
   final LanguageProvider languageProvider;
+  final Function(Map<String, dynamic>)? onRowDoubleClick;
 
-  const ScrapGridPanel({super.key, required this.languageProvider});
+  const ScrapGridPanel({
+    super.key,
+    required this.languageProvider,
+    this.onRowDoubleClick,
+  });
 
   @override
   State<ScrapGridPanel> createState() => ScrapGridPanelState();
@@ -18,25 +23,19 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
   List<Map<String, dynamic>> _allData = [];
   List<Map<String, dynamic>> _filteredData = [];
 
-  // Sorting
   String? _sortColumn;
   bool _sortAscending = true;
-
-  // Column filters
   Map<String, String?> _columnFilters = {};
-
-  // Selection
   int _selectedIndex = -1;
-
   bool _isLoading = false;
 
-  // Search state
   DateTime? _searchStart;
   DateTime? _searchEnd;
   String? _searchArea;
 
   static const _fields = [
     'scanned_original',
+    'raw_barcode',
     'part_no',
     'modelo',
     'area',
@@ -52,6 +51,7 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
 
   List<String> get _headers => [
         tr('scrap_scanned_code'),
+        tr('scrap_raw_barcode'),
         tr('scrap_part_no'),
         tr('scrap_modelo'),
         tr('scrap_area'),
@@ -69,8 +69,11 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
   @override
   void initState() {
     super.initState();
-    initColumnFlex(10, 'scrap_grid',
-        defaultFlexValues: [2.5, 1.5, 1.5, 1.2, 2.0, 1.5, 0.8, 1.2, 1.2, 1.0]);
+    initColumnFlex(
+      11,
+      'scrap_grid',
+      defaultFlexValues: [2.5, 1.8, 1.5, 1.5, 1.2, 2.0, 1.5, 0.8, 1.2, 1.2, 1.0],
+    );
     _loadTodayData();
   }
 
@@ -79,7 +82,8 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
     searchByDate(now, now);
   }
 
-  Future<void> searchByDate(DateTime? start, DateTime? end, {String? area}) async {
+  Future<void> searchByDate(DateTime? start, DateTime? end,
+      {String? area}) async {
     final s = start ?? DateTime.now();
     final e = end ?? DateTime.now();
     _searchStart = s;
@@ -89,8 +93,10 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
     setState(() => _isLoading = true);
 
     try {
-      final fechaInicio = '${s.year}-${s.month.toString().padLeft(2, '0')}-${s.day.toString().padLeft(2, '0')}';
-      final fechaFin = '${e.year}-${e.month.toString().padLeft(2, '0')}-${e.day.toString().padLeft(2, '0')}';
+      final fechaInicio =
+          '${s.year}-${s.month.toString().padLeft(2, '0')}-${s.day.toString().padLeft(2, '0')}';
+      final fechaFin =
+          '${e.year}-${e.month.toString().padLeft(2, '0')}-${e.day.toString().padLeft(2, '0')}';
 
       final result = await ApiService.getScrapRecords(
         fechaInicio: fechaInicio,
@@ -101,7 +107,8 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
 
       if (mounted) {
         setState(() {
-          _allData = (result['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+          _allData =
+              (result['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
           _applyFiltersAndSort();
           _selectedIndex = -1;
         });
@@ -177,9 +184,12 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
                   title: Text(
                     tr('scrap_all'),
                     style: TextStyle(
-                      color: currentFilter == null ? Colors.blue : Colors.white70,
+                      color:
+                          currentFilter == null ? Colors.blue : Colors.white70,
                       fontSize: 13,
-                      fontWeight: currentFilter == null ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: currentFilter == null
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                   onTap: () {
@@ -196,9 +206,12 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
                       title: Text(
                         v,
                         style: TextStyle(
-                          color: currentFilter == v ? Colors.blue : Colors.white70,
+                          color:
+                              currentFilter == v ? Colors.blue : Colors.white70,
                           fontSize: 13,
-                          fontWeight: currentFilter == v ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: currentFilter == v
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                       onTap: () {
@@ -223,7 +236,6 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
 
     return Column(
       children: [
-        // Header
         buildResizableHeader(
           headers: _headers,
           fieldMapping: _fields,
@@ -234,12 +246,13 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
           columnFilters: _columnFilters,
           showCheckbox: false,
         ),
-        // Rows
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _filteredData.isEmpty
-                  ? Center(child: Text(tr('scrap_no_data'), style: const TextStyle(color: Colors.white38)))
+                  ? Center(
+                      child: Text(tr('scrap_no_data'),
+                          style: const TextStyle(color: Colors.white38)))
                   : ListView.builder(
                       itemCount: _filteredData.length,
                       itemBuilder: (context, index) {
@@ -247,23 +260,34 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
                         final isSelected = index == _selectedIndex;
                         return GestureDetector(
                           onTap: () => setState(() => _selectedIndex = index),
+                          onDoubleTap: () => widget.onRowDoubleClick?.call(row),
                           child: Container(
                             height: 30,
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? Colors.red.withOpacity(0.20)
-                                  : (index.isEven ? AppColors.gridRowEven : AppColors.gridRowOdd),
-                              border: Border(bottom: BorderSide(color: AppColors.border.withOpacity(0.3))),
+                                  ? Colors.red.withValues(alpha: 0.20)
+                                  : (index.isEven
+                                      ? AppColors.gridRowEven
+                                      : AppColors.gridRowOdd),
+                              border: Border(
+                                bottom: BorderSide(
+                                  color:
+                                      AppColors.border.withValues(alpha: 0.3),
+                                ),
+                              ),
                             ),
                             child: Row(
                               children: List.generate(_fields.length, (ci) {
+                                final field = _fields[ci];
                                 return Expanded(
                                   flex: getColumnFlex(ci),
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6),
                                     child: Text(
-                                      '${row[_fields[ci]] ?? ''}',
-                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                      '${row[field] ?? ''}',
+                                      style: const TextStyle(
+                                          color: Colors.white70, fontSize: 12),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -276,7 +300,6 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
                       },
                     ),
         ),
-        // Footer
         Container(
           height: 28,
           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -289,12 +312,15 @@ class ScrapGridPanelState extends State<ScrapGridPanel>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.15),
+                  color: Colors.red.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   'SCRAP',
-                  style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      color: Colors.red,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
                 ),
               ),
               const SizedBox(width: 12),

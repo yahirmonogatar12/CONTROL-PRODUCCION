@@ -421,6 +421,7 @@ exports.getAvailablePermissions = async (req, res, next) => {
       { key: 'view_pcb_inventario', name: 'Ver PCB Inventario', category: 'Inventario PCB', description: 'Puede ver el inventario actual de PCBs' },
       { key: 'view_scrap', name: 'Ver Control Scrap', category: 'Scrap', description: 'Puede ver el modulo de control de scrap' },
       { key: 'write_scrap', name: 'Registrar Scrap', category: 'Scrap', description: 'Puede registrar escaneos de scrap' },
+      { key: 'edit_scrap_history', name: 'Editar Historial Scrap', category: 'Scrap', description: 'Puede modificar registros historicos de scrap' },
       { key: 'manage_scrap_motivos', name: 'Gestionar Catalogo de Defectos', category: 'Scrap', description: 'Puede ver y administrar el catalogo de defectos (motivos de scrap)' },
     ];
     res.json(permissions);

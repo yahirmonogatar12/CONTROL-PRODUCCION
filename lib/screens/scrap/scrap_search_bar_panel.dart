@@ -61,6 +61,7 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
 
     final headers = [
       tr('scrap_scanned_code'),
+      tr('scrap_raw_barcode'),
       tr('scrap_part_no'),
       tr('scrap_modelo'),
       tr('scrap_area'),
@@ -73,6 +74,7 @@ class _ScrapSearchBarPanelState extends State<ScrapSearchBarPanel> {
     ];
     final fields = [
       'scanned_original',
+      'raw_barcode',
       'part_no',
       'modelo',
       'area',

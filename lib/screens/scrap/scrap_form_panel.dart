@@ -38,6 +38,8 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
   String? _statusMessage;
   bool _statusIsError = false;
   int _lastInsertedId = 0;
+  String? _detectedRawBarcode;
+  bool _rawBarcodeWasAuto = false;
 
   List<Map<String, dynamic>> _motivos = [];
 
@@ -295,6 +297,33 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
       return;
     }
 
+    // Resolver raw_barcode antes del POST. Si no se encuentra automaticamente,
+    // pedirlo manualmente al usuario (cancelar aborta el scan).
+    final lookup = await ApiService.lookupRawBarcode(code);
+    if (!mounted) return;
+    String? rawBarcode = lookup['raw_barcode']?.toString();
+    bool wasAuto = lookup['found'] == true &&
+        rawBarcode != null &&
+        rawBarcode.isNotEmpty;
+    if (!wasAuto) {
+      final picked = await _askRawBarcodeManual();
+      if (!mounted) return;
+      if (picked == null || picked.isEmpty) {
+        setState(() {
+          _statusMessage = tr('scrap_raw_barcode_required');
+          _statusIsError = true;
+        });
+        requestScanFocus();
+        return;
+      }
+      rawBarcode = picked;
+      wasAuto = false;
+    }
+    setState(() {
+      _detectedRawBarcode = rawBarcode;
+      _rawBarcodeWasAuto = wasAuto;
+    });
+
     setState(() {
       _isLoading = true;
       _statusMessage = null;
@@ -308,6 +337,7 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
           _commentController.text.isNotEmpty ? _commentController.text : null,
       usuario: AuthService.currentUser?.nombreCompleto,
       cantidad: int.tryParse(_qtyController.text) ?? 1,
+      rawBarcode: rawBarcode,
     );
 
     if (mounted) {
@@ -318,6 +348,8 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
           _statusMessage =
               '${tr('scrap_scan_saved')}: ${data?['part_no'] ?? ''} - ${data?['modelo'] ?? 'N/A'} [${data?['area'] ?? ''}]';
           _statusIsError = false;
+          _detectedRawBarcode = null;
+          _rawBarcodeWasAuto = false;
         });
         _scanController.clear();
         _qtyController.text = '1';
@@ -332,6 +364,8 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
           msg = tr('scrap_invalid_area');
         } else if (errorCode == 'INVALID_MOTIVO') {
           msg = tr('scrap_invalid_motivo');
+        } else if (errorCode == 'MISSING_RAW_BARCODE') {
+          msg = tr('scrap_raw_barcode_required');
         }
         setState(() {
           _statusMessage = msg;
@@ -342,6 +376,93 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
       setState(() => _isLoading = false);
       requestScanFocus();
     }
+  }
+
+  Future<String?> _askRawBarcodeManual() async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (focusNode.canRequestFocus) focusNode.requestFocus();
+    });
+
+    String? value;
+    try {
+      value = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.panelBackground,
+          title: Row(
+            children: [
+              const Icon(Icons.qr_code_2, color: Colors.orangeAccent, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  tr('scrap_raw_barcode_capture_title'),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr('scrap_raw_barcode_not_found'),
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.characters,
+                  style: const TextStyle(
+                      color: Colors.cyan,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600),
+                  decoration: fieldDecoration().copyWith(
+                    hintText: tr('scrap_raw_barcode'),
+                    hintStyle:
+                        const TextStyle(color: Colors.white38, fontSize: 12),
+                    prefixIcon: const Icon(Icons.qr_code_scanner,
+                        color: Colors.orangeAccent, size: 18),
+                  ),
+                  onSubmitted: (v) {
+                    final trimmed = v.trim().toUpperCase();
+                    if (trimmed.isNotEmpty) Navigator.pop(ctx, trimmed);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: Text(tr('cancel'),
+                  style: const TextStyle(color: Colors.white70)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final trimmed = controller.text.trim().toUpperCase();
+                if (trimmed.isNotEmpty) Navigator.pop(ctx, trimmed);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+      focusNode.dispose();
+    }
+    return value;
   }
 
   Future<void> _undoLastScan() async {
@@ -503,6 +624,51 @@ class ScrapFormPanelState extends State<ScrapFormPanel> {
               ),
             ],
           ),
+          if (_detectedRawBarcode != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: (_rawBarcodeWasAuto
+                        ? Colors.lightGreen
+                        : Colors.orangeAccent)
+                    .withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                    color: _rawBarcodeWasAuto
+                        ? Colors.lightGreen
+                        : Colors.orangeAccent,
+                    width: 1),
+              ),
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _rawBarcodeWasAuto
+                        ? Icons.auto_awesome
+                        : Icons.touch_app,
+                    size: 12,
+                    color: _rawBarcodeWasAuto
+                        ? Colors.lightGreen
+                        : Colors.orangeAccent,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${tr('scrap_raw_barcode')}: $_detectedRawBarcode',
+                    style: TextStyle(
+                      color: _rawBarcodeWasAuto
+                          ? Colors.lightGreen
+                          : Colors.orangeAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           // Fila 3: Scan field principal (con autocomplete) + Undo + Status
           Row(

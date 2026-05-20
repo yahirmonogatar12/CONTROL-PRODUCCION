@@ -688,6 +688,11 @@ async function migratePcbInventorySchema() {
     'defect_data_id',
     'VARCHAR(50) NULL AFTER defect_source_area'
   );
+  await addColumnIfNotExists(
+    'pcb_inventory_scan_prod',
+    'linea_salida_pcb',
+    'VARCHAR(20) NULL AFTER defect_data_id'
+  );
 
   try {
     const [procesoCols] = await pool.query(`
@@ -857,8 +862,12 @@ async function runMigrations() {
   await addPcbInventoryTipoMovimiento();
   await createScrapMotivosTable();
   await createScrapRecordsTable();
+  await createScrapRecordEditsTable();
   await migrateScrapAreaColumn();
   await addColumnIfNotExists('scrap_records', 'cantidad', 'INT NOT NULL DEFAULT 1 AFTER usuario_registro');
+  await addColumnIfNotExists('scrap_records', 'raw_barcode', 'VARCHAR(180) NULL AFTER part_no');
+  await addColumnIfNotExists('scrap_record_edits', 'old_raw_barcode', 'VARCHAR(180) NULL AFTER new_part_no');
+  await addColumnIfNotExists('scrap_record_edits', 'new_raw_barcode', 'VARCHAR(180) NULL AFTER old_raw_barcode');
 
   // Reportar tablas faltantes una sola vez
   if (_missingTablesCache.size > 0) {
@@ -1054,6 +1063,47 @@ async function createScrapRecordsTable() {
     console.log('  Tabla scrap_records verificada/creada');
   } catch (err) {
     console.log('Nota: La tabla scrap_records puede ya existir:', err.message);
+  }
+}
+
+async function createScrapRecordEditsTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS scrap_record_edits (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        scrap_record_id BIGINT NOT NULL,
+        old_scanned_original VARCHAR(180) NULL,
+        new_scanned_original VARCHAR(180) NULL,
+        old_scanned_original_norm VARCHAR(180) NULL,
+        new_scanned_original_norm VARCHAR(180) NULL,
+        old_assy_type VARCHAR(20) NULL,
+        new_assy_type VARCHAR(20) NULL,
+        old_part_no VARCHAR(50) NULL,
+        new_part_no VARCHAR(50) NULL,
+        old_modelo VARCHAR(120) NULL,
+        new_modelo VARCHAR(120) NULL,
+        old_area VARCHAR(30) NULL,
+        new_area VARCHAR(30) NULL,
+        old_motivo_scrap_id INT NULL,
+        new_motivo_scrap_id INT NULL,
+        old_motivo_scrap_texto VARCHAR(200) NULL,
+        new_motivo_scrap_texto VARCHAR(200) NULL,
+        old_comentarios TEXT NULL,
+        new_comentarios TEXT NULL,
+        old_cantidad INT NULL,
+        new_cantidad INT NULL,
+        edit_reason TEXT NOT NULL,
+        edited_by_user_id INT NULL,
+        edited_by_name VARCHAR(100) NULL,
+        edited_at DATETIME NOT NULL,
+        INDEX idx_scrap_record_id (scrap_record_id),
+        INDEX idx_edited_at (edited_at),
+        CONSTRAINT fk_scrap_record_edit_record FOREIGN KEY (scrap_record_id) REFERENCES scrap_records(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('  Tabla scrap_record_edits verificada/creada');
+  } catch (err) {
+    console.log('Nota: La tabla scrap_record_edits puede ya existir:', err.message);
   }
 }
 

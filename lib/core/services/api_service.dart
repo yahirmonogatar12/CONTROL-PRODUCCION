@@ -3909,6 +3909,34 @@ class ApiService {
     }
   }
 
+  // GET - Lookup en history_vision por la ultima maquina (linea) del PCB
+  // Responde { success, found, linea } donde linea es M1..M4, DP1..DP3, H1 o null.
+  static Future<Map<String, dynamic>> lookupLineaSalidaPcb(
+      String codigo) async {
+    try {
+      final code = codigo.trim();
+      if (code.isEmpty) {
+        return {'success': false, 'found': false, 'linea': null};
+      }
+      final response = await http.get(
+        Uri.parse(
+            '$baseUrl/pcb-inventory/lookup-linea-salida?codigo=${Uri.encodeQueryComponent(code)}'),
+      );
+      if (response.statusCode != 200) {
+        return {'success': false, 'found': false, 'linea': null};
+      }
+      final body = json.decode(response.body);
+      return {
+        'success': body['success'] == true,
+        'found': body['found'] == true,
+        'linea': body['linea'],
+        'raw_machine_name': body['raw_machine_name'],
+      };
+    } catch (_) {
+      return {'success': false, 'found': false, 'linea': null};
+    }
+  }
+
   static Future<Map<String, dynamic>> scanPcbInventory({
     required String scannedCode,
     required String inventoryDate,
@@ -3924,6 +3952,7 @@ class ApiService {
     String? etapaDeteccion,
     String? defectSourceArea,
     String? defectDataId,
+    String? lineaSalidaPcb,
     bool manualQtyConfirmed = false,
     String? comentarios,
     String? scannedBy,
@@ -3947,6 +3976,7 @@ class ApiService {
           'etapa_deteccion': etapaDeteccion,
           'defect_source_area': defectSourceArea,
           'defect_data_id': defectDataId,
+          'linea_salida_pcb': lineaSalidaPcb,
           'manual_qty_confirmed': manualQtyConfirmed,
           'comentarios': comentarios,
           'scanned_by': scannedBy,
@@ -4335,6 +4365,33 @@ class ApiService {
   // SCRAP RECORDS
   // ============================================
 
+  // GET - Lookup raw_barcode por QR escaneado.
+  // Respuesta: { success, found, raw_barcode, source }
+  static Future<Map<String, dynamic>> lookupRawBarcode(String codigo) async {
+    try {
+      final code = codigo.trim();
+      if (code.isEmpty) {
+        return {'success': false, 'found': false, 'raw_barcode': null};
+      }
+      final response = await http.get(
+        Uri.parse(
+            '$baseUrl/scrap/lookup-raw-barcode?codigo=${Uri.encodeQueryComponent(code)}'),
+      );
+      if (response.statusCode != 200) {
+        return {'success': false, 'found': false, 'raw_barcode': null};
+      }
+      final body = json.decode(response.body);
+      return {
+        'success': body['success'] == true,
+        'found': body['found'] == true,
+        'raw_barcode': body['raw_barcode'],
+        'source': body['source'],
+      };
+    } catch (_) {
+      return {'success': false, 'found': false, 'raw_barcode': null};
+    }
+  }
+
   // POST - Registrar escaneo de scrap
   static Future<Map<String, dynamic>> scanScrap({
     required String scannedCode,
@@ -4343,6 +4400,7 @@ class ApiService {
     String? comentarios,
     String? usuario,
     int cantidad = 1,
+    String? rawBarcode,
   }) async {
     try {
       final response = await http.post(
@@ -4355,6 +4413,7 @@ class ApiService {
           'comentarios': comentarios,
           'usuario': usuario,
           'cantidad': cantidad,
+          'raw_barcode': rawBarcode,
         }),
       );
       final body = json.decode(response.body);
@@ -4396,6 +4455,54 @@ class ApiService {
       return {'success': false, 'data': [], 'count': 0};
     } catch (e) {
       return {'success': false, 'data': [], 'count': 0};
+    }
+  }
+
+  // PUT - Actualizar registro historico de scrap
+  static Future<Map<String, dynamic>> updateScrapRecord({
+    required int id,
+    required String scannedCode,
+    required String area,
+    required int motivoScrapId,
+    String? comentarios,
+    required int cantidad,
+    required String editReason,
+    required int editedByUserId,
+    required String editedByName,
+    String? rawBarcode,
+  }) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/scrap/record/$id'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'scanned_code': scannedCode,
+          'area': area,
+          'motivo_scrap_id': motivoScrapId,
+          'comentarios': comentarios,
+          'cantidad': cantidad,
+          'raw_barcode': rawBarcode,
+          'edit_reason': editReason,
+          'edited_by_user_id': editedByUserId,
+          'edited_by_name': editedByName,
+        }),
+      );
+      final body = json.decode(response.body);
+      if (response.statusCode == 200 && body['success'] == true) {
+        return body;
+      }
+      return {
+        'success': false,
+        'message': body['message'] ?? 'Error desconocido',
+        'code': body['code'] ?? 'UNKNOWN',
+        'statusCode': response.statusCode,
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error de conexion: $e',
+        'code': 'CONNECTION_ERROR'
+      };
     }
   }
 

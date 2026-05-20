@@ -5,6 +5,7 @@
  */
 
 const { pool, getMexicoDateTime, getMexicoDate } = require('../config/database');
+const { FULL_ACCESS_DEPARTMENTS } = require('../config/permissions');
 
 // ============================================
 // HELPERS
@@ -33,11 +34,11 @@ function parseScannedCode(code) {
   };
 }
 
-async function lookupModelo(partNo) {
+async function lookupModelo(partNo, db = pool) {
   if (!partNo) return 'N/A';
   try {
     // Buscar project (modelo) en tabla raw por part_no
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT DISTINCT project FROM raw WHERE part_no = ? AND project IS NOT NULL AND project != '' LIMIT 1`,
       [partNo]
     );
@@ -50,7 +51,141 @@ async function lookupModelo(partNo) {
   }
 }
 
+async function buildScrapCodeFields(scannedCode, db = pool) {
+  const scannedOriginal = scannedCode.trim();
+  const scannedOriginalNorm = normalizeCode(scannedCode);
+  const parsed = parseScannedCode(scannedOriginal);
+  const modelo = await lookupModelo(parsed.part_no, db);
+
+  let assyType = parsed.assy_type;
+  if (!assyType && parsed.part_no) {
+    try {
+      const [rawRows] = await db.query(
+        `SELECT model FROM raw WHERE part_no = ? AND model IS NOT NULL LIMIT 1`,
+        [parsed.part_no]
+      );
+      if (rawRows.length > 0 && rawRows[0].model) {
+        assyType = rawRows[0].model;
+      }
+    } catch (_) {}
+  }
+
+  return {
+    scannedOriginal,
+    scannedOriginalNorm,
+    assyType: assyType || null,
+    partNo: parsed.part_no,
+    modelo,
+  };
+}
+
+async function getScrapEditUser(userId, db = pool) {
+  if (!userId) return { allowed: false, user: null };
+
+  const [users] = await db.query(
+    `SELECT id, nombre_completo, departamento, activo
+     FROM usuarios_sistema
+     WHERE id = ? AND activo = 1
+     LIMIT 1`,
+    [userId]
+  );
+
+  if (users.length === 0) return { allowed: false, user: null };
+
+  const user = users[0];
+  if (FULL_ACCESS_DEPARTMENTS.includes(user.departamento)) {
+    return { allowed: true, user };
+  }
+
+  const [permissions] = await db.query(
+    `SELECT id
+     FROM user_permissions_materiales
+     WHERE user_id = ? AND permission_key = 'edit_scrap_history' AND enabled = 1
+     LIMIT 1`,
+    [userId]
+  );
+
+  return { allowed: permissions.length > 0, user };
+}
+
 const VALID_AREAS = ['M1', 'M2', 'M3', 'M4', 'D1', 'D2', 'D3', 'CALIDAD', 'MANTENIMIENTO', 'SMD', 'IMD', 'IPM', 'COATING', 'PROVEEDOR', 'COMPONENTE'];
+
+// ============================================
+// Lookup de raw_barcode por QR escaneado.
+// Fuentes en cascada:
+//   1) input_main.raw (case-insensitive) -> input_main.raw_barcode
+//   2) history_vision.qr_payload (case-insensitive) -> history_vision.barcode
+// Devuelve { raw_barcode, source } o { raw_barcode: null, source: null }.
+// ============================================
+async function findRawBarcode(scannedCode, db = pool) {
+  const raw = (scannedCode || '').toString().trim();
+  if (!raw) return { raw_barcode: null, source: null };
+  const norm = normalizeCode(raw);
+
+  // 1) input_main.raw -> raw_barcode
+  try {
+    const [rows] = await db.query(
+      `SELECT raw_barcode
+       FROM input_main
+       WHERE (UPPER(raw) = UPPER(?) OR UPPER(raw) = ?)
+         AND raw_barcode IS NOT NULL AND raw_barcode <> ''
+       ORDER BY ts DESC, id DESC
+       LIMIT 1`,
+      [raw, norm]
+    );
+    if (rows.length > 0 && rows[0].raw_barcode) {
+      return { raw_barcode: rows[0].raw_barcode, source: 'input_main' };
+    }
+  } catch (_) {
+    // input_main puede no existir en algunos ambientes
+  }
+
+  // 2) history_vision.qr_payload -> barcode
+  try {
+    const [rows] = await db.query(
+      `SELECT barcode
+       FROM history_vision
+       WHERE (UPPER(qr_payload) = UPPER(?) OR UPPER(qr_payload) = ?)
+         AND barcode IS NOT NULL AND barcode <> ''
+       ORDER BY captured_at_utc DESC, id DESC
+       LIMIT 1`,
+      [raw, norm]
+    );
+    if (rows.length > 0 && rows[0].barcode) {
+      return { raw_barcode: rows[0].barcode, source: 'history_vision.qr_payload' };
+    }
+  } catch (_) {
+    // history_vision puede no existir
+  }
+
+  return { raw_barcode: null, source: null };
+}
+
+// ============================================
+// GET /api/scrap/lookup-raw-barcode?codigo=...
+// Devuelve { success, found, raw_barcode, source }
+// ============================================
+exports.lookupRawBarcode = async (req, res, next) => {
+  try {
+    const codigo = (req.query.codigo || '').toString().trim();
+    if (!codigo) {
+      return res.status(400).json({
+        success: false,
+        found: false,
+        message: 'codigo es requerido',
+      });
+    }
+    const result = await findRawBarcode(codigo);
+    return res.json({
+      success: true,
+      found: result.raw_barcode !== null,
+      raw_barcode: result.raw_barcode,
+      source: result.source,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
 // ============================================
 // POST /api/scrap/scan
@@ -58,7 +193,7 @@ const VALID_AREAS = ['M1', 'M2', 'M3', 'M4', 'D1', 'D2', 'D3', 'CALIDAD', 'MANTE
 // ============================================
 exports.scan = async (req, res, next) => {
   try {
-    const { scanned_code, area, motivo_scrap_id, comentarios, usuario, cantidad } = req.body;
+    const { scanned_code, area, motivo_scrap_id, comentarios, usuario, cantidad, raw_barcode } = req.body;
     const qtyVal = Math.max(1, parseInt(cantidad) || 1);
 
     if (!scanned_code || !scanned_code.trim()) {
@@ -85,17 +220,33 @@ exports.scan = async (req, res, next) => {
       });
     }
 
+    // Resolver raw_barcode. Si el cliente lo envia explicitamente lo usamos;
+    // si no, intentamos un lookup interno por si el frontend no lo precargo.
+    // Si tampoco se encuentra automaticamente, devolvemos MISSING_RAW_BARCODE
+    // para que el frontend muestre el dialog de captura manual.
+    let rawBarcodeVal = (raw_barcode || '').toString().trim();
+    if (!rawBarcodeVal) {
+      const lookup = await findRawBarcode(scanned_code);
+      if (lookup.raw_barcode) {
+        rawBarcodeVal = lookup.raw_barcode;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'No se encontro raw_barcode. Captura el barcode manualmente.',
+          code: 'MISSING_RAW_BARCODE',
+        });
+      }
+    }
+
     // Parsear QR
-    const parsed = parseScannedCode(scanned_code.trim());
-    const scannedOriginal = scanned_code.trim();
-    const scannedOriginalNorm = normalizeCode(scanned_code);
+    const codeFields = await buildScrapCodeFields(scanned_code);
     const fechaHoy = getMexicoDate();
 
     // Verificar duplicado (mismo codigo + misma fecha)
     const [existing] = await pool.query(
       `SELECT id FROM scrap_records 
        WHERE scanned_original_norm = ? AND DATE(fecha_registro) = ?`,
-      [scannedOriginalNorm, fechaHoy]
+      [codeFields.scannedOriginalNorm, fechaHoy]
     );
 
     if (existing.length > 0) {
@@ -123,35 +274,19 @@ exports.scan = async (req, res, next) => {
       });
     }
 
-    // Buscar modelo (project) en tabla raw
-    const modelo = await lookupModelo(parsed.part_no);
-
-    // Si entrada manual (sin QR), intentar llenar assy_type desde raw.model
-    let assyType = parsed.assy_type;
-    if (!assyType && parsed.part_no) {
-      try {
-        const [rawRows] = await pool.query(
-          `SELECT model FROM raw WHERE part_no = ? AND model IS NOT NULL LIMIT 1`,
-          [parsed.part_no]
-        );
-        if (rawRows.length > 0 && rawRows[0].model) {
-          assyType = rawRows[0].model;
-        }
-      } catch (_) {}
-    }
-
     const ahora = getMexicoDateTime();
 
     const [result] = await pool.query(
-      `INSERT INTO scrap_records 
-        (scanned_original, scanned_original_norm, assy_type, part_no, modelo, area, motivo_scrap_id, motivo_scrap_texto, comentarios, usuario_registro, fecha_registro, cantidad)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO scrap_records
+        (scanned_original, scanned_original_norm, assy_type, part_no, raw_barcode, modelo, area, motivo_scrap_id, motivo_scrap_texto, comentarios, usuario_registro, fecha_registro, cantidad)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        scannedOriginal,
-        scannedOriginalNorm,
-        assyType || null,
-        parsed.part_no,
-        modelo,
+        codeFields.scannedOriginal,
+        codeFields.scannedOriginalNorm,
+        codeFields.assyType,
+        codeFields.partNo,
+        rawBarcodeVal,
+        codeFields.modelo,
         area,
         motivo_scrap_id,
         motivoTexto,
@@ -214,6 +349,100 @@ exports.getRecords = async (req, res, next) => {
 
     const [rows] = await pool.query(query, params);
 
+    // Fallback para registros historicos sin raw_barcode persistido.
+    // Lookup batch en input_main y history_vision por scanned_original_norm
+    // (que tambien suele coincidir con UPPER del raw original).
+    const missingNorms = [...new Set(
+      rows
+        .filter(r => !r.raw_barcode)
+        .map(r => (r.scanned_original_norm || normalizeCode(r.scanned_original)))
+        .filter(Boolean)
+    )];
+
+    if (missingNorms.length > 0) {
+      const byKey = new Map();
+      const placeholders = missingNorms.map(() => '?').join(', ');
+
+      // 1) Batch en input_main.raw
+      try {
+        const [im] = await pool.query(
+          `SELECT UPPER(im.raw) AS raw_upper, im.raw_barcode
+           FROM input_main im
+           INNER JOIN (
+             SELECT UPPER(raw) AS raw_upper, MAX(ts) AS max_ts
+             FROM input_main
+             WHERE UPPER(raw) IN (${placeholders})
+               AND raw_barcode IS NOT NULL AND raw_barcode <> ''
+             GROUP BY UPPER(raw)
+           ) latest
+             ON latest.raw_upper = UPPER(im.raw)
+            AND latest.max_ts = im.ts`,
+          missingNorms
+        );
+        for (const h of im) {
+          if (h.raw_barcode) byKey.set(h.raw_upper, h.raw_barcode);
+        }
+      } catch (e) {
+        console.log('Nota: fallback input_main fallo:', e.message);
+      }
+
+      // 2) Batch en history_vision.qr_payload para los que sigan faltando
+      const stillMissing = missingNorms.filter(n => !byKey.has(n));
+      if (stillMissing.length > 0) {
+        try {
+          const qpPlaceholders = stillMissing.map(() => '?').join(', ');
+          const [hv] = await pool.query(
+            `SELECT UPPER(hv.qr_payload) AS qr_upper, hv.barcode
+             FROM history_vision hv
+             INNER JOIN (
+               SELECT UPPER(qr_payload) AS qr_upper, MAX(captured_at_utc) AS max_ts
+               FROM history_vision
+               WHERE UPPER(qr_payload) IN (${qpPlaceholders})
+                 AND barcode IS NOT NULL AND barcode <> ''
+               GROUP BY UPPER(qr_payload)
+             ) latest
+               ON latest.qr_upper = UPPER(hv.qr_payload)
+              AND latest.max_ts = hv.captured_at_utc`,
+            stillMissing
+          );
+          for (const h of hv) {
+            if (h.barcode) byKey.set(h.qr_upper, h.barcode);
+          }
+        } catch (e) {
+          console.log('Nota: fallback history_vision fallo:', e.message);
+        }
+      }
+
+      // Asignar y recolectar ids a backfillear por valor unico de barcode
+      const idsByBarcode = new Map();
+      for (const r of rows) {
+        if (r.raw_barcode) continue;
+        const key = r.scanned_original_norm || normalizeCode(r.scanned_original);
+        if (!key) continue;
+        const barcode = byKey.get(key);
+        if (!barcode) continue;
+        r.raw_barcode = barcode;
+        if (!idsByBarcode.has(barcode)) idsByBarcode.set(barcode, []);
+        idsByBarcode.get(barcode).push(r.id);
+      }
+
+      // UPDATE en lote, una sentencia por barcode unico
+      for (const [barcode, ids] of idsByBarcode) {
+        if (ids.length === 0) continue;
+        const idPlaceholders = ids.map(() => '?').join(', ');
+        try {
+          await pool.query(
+            `UPDATE scrap_records
+             SET raw_barcode = ?
+             WHERE id IN (${idPlaceholders}) AND raw_barcode IS NULL`,
+            [barcode, ...ids]
+          );
+        } catch (e) {
+          console.log('Nota: backfill raw_barcode fallo:', e.message);
+        }
+      }
+    }
+
     res.json({
       success: true,
       data: rows,
@@ -221,6 +450,261 @@ exports.getRecords = async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+};
+
+// ============================================
+// PUT /api/scrap/record/:id
+// Edita un registro historico de scrap
+// ============================================
+exports.updateRecord = async (req, res, next) => {
+  let connection;
+
+  try {
+    connection = await pool.getConnection();
+    const { id } = req.params;
+    const {
+      scanned_code,
+      area,
+      motivo_scrap_id,
+      comentarios,
+      cantidad,
+      raw_barcode,
+      edit_reason,
+      edited_by_user_id,
+      edited_by_name,
+    } = req.body;
+
+    const recordId = parseInt(id, 10);
+    const editorUserId = parseInt(edited_by_user_id, 10);
+    const qtyVal = parseInt(cantidad, 10);
+    const motivoId = parseInt(motivo_scrap_id, 10);
+
+    if (!recordId) {
+      return res.status(400).json({
+        success: false,
+        message: 'id invalido',
+        code: 'INVALID_ID',
+      });
+    }
+
+    if (!scanned_code || !scanned_code.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'scanned_code es requerido',
+        code: 'MISSING_SCANNED_CODE',
+      });
+    }
+
+    if (!area || !VALID_AREAS.includes(area)) {
+      return res.status(400).json({
+        success: false,
+        message: `area es requerida y debe ser una de: ${VALID_AREAS.join(', ')}`,
+        code: 'INVALID_AREA',
+      });
+    }
+
+    if (!motivoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'motivo_scrap_id es requerido',
+        code: 'MISSING_MOTIVO',
+      });
+    }
+
+    if (!qtyVal || qtyVal < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'cantidad debe ser mayor o igual a 1',
+        code: 'INVALID_CANTIDAD',
+      });
+    }
+
+    if (!edit_reason || !edit_reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'edit_reason es requerido',
+        code: 'MISSING_EDIT_REASON',
+      });
+    }
+
+    const permission = await getScrapEditUser(editorUserId, connection);
+    if (!permission.allowed) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tiene permiso para editar historial de scrap',
+        code: 'FORBIDDEN',
+      });
+    }
+
+    await connection.beginTransaction();
+
+    const [currentRows] = await connection.query(
+      `SELECT *
+       FROM scrap_records
+       WHERE id = ?
+       FOR UPDATE`,
+      [recordId]
+    );
+
+    if (currentRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Registro no encontrado',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const current = currentRows[0];
+    const codeFields = await buildScrapCodeFields(scanned_code, connection);
+
+    const [duplicateRows] = await connection.query(
+      `SELECT id
+       FROM scrap_records
+       WHERE scanned_original_norm = ?
+         AND DATE(fecha_registro) = DATE(?)
+         AND id <> ?
+       LIMIT 1`,
+      [codeFields.scannedOriginalNorm, current.fecha_registro, recordId]
+    );
+
+    if (duplicateRows.length > 0) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: 'Este codigo ya fue registrado como scrap en la fecha del registro',
+        code: 'DUPLICATE_SCAN',
+        existing_id: duplicateRows[0].id,
+      });
+    }
+
+    const [motivoRows] = await connection.query(
+      `SELECT motivo FROM scrap_motivos WHERE id = ? AND activo = 1`,
+      [motivoId]
+    );
+
+    if (motivoRows.length === 0) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Motivo de scrap no encontrado o inactivo',
+        code: 'INVALID_MOTIVO',
+      });
+    }
+
+    const motivoTexto = motivoRows[0].motivo;
+    const ahora = getMexicoDateTime();
+    const editedByName = edited_by_name || permission.user.nombre_completo;
+    const newComentarios = comentarios && comentarios.trim() ? comentarios.trim() : null;
+
+    // raw_barcode: si el cliente envia uno explicito (no undefined), lo respetamos
+    // (incluso vacio -> NULL para borrarlo). Si es undefined, conservamos el actual.
+    let newRawBarcode;
+    if (raw_barcode === undefined) {
+      newRawBarcode = current.raw_barcode || null;
+    } else {
+      const trimmed = (raw_barcode || '').toString().trim();
+      newRawBarcode = trimmed.length > 0 ? trimmed : null;
+    }
+
+    await connection.query(
+      `UPDATE scrap_records
+       SET scanned_original = ?,
+           scanned_original_norm = ?,
+           assy_type = ?,
+           part_no = ?,
+           raw_barcode = ?,
+           modelo = ?,
+           area = ?,
+           motivo_scrap_id = ?,
+           motivo_scrap_texto = ?,
+           comentarios = ?,
+           cantidad = ?
+       WHERE id = ?`,
+      [
+        codeFields.scannedOriginal,
+        codeFields.scannedOriginalNorm,
+        codeFields.assyType,
+        codeFields.partNo,
+        newRawBarcode,
+        codeFields.modelo,
+        area,
+        motivoId,
+        motivoTexto,
+        newComentarios,
+        qtyVal,
+        recordId,
+      ]
+    );
+
+    await connection.query(
+      `INSERT INTO scrap_record_edits
+        (scrap_record_id,
+         old_scanned_original, new_scanned_original,
+         old_scanned_original_norm, new_scanned_original_norm,
+         old_assy_type, new_assy_type,
+         old_part_no, new_part_no,
+         old_raw_barcode, new_raw_barcode,
+         old_modelo, new_modelo,
+         old_area, new_area,
+         old_motivo_scrap_id, new_motivo_scrap_id,
+         old_motivo_scrap_texto, new_motivo_scrap_texto,
+         old_comentarios, new_comentarios,
+         old_cantidad, new_cantidad,
+         edit_reason, edited_by_user_id, edited_by_name, edited_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        recordId,
+        current.scanned_original,
+        codeFields.scannedOriginal,
+        current.scanned_original_norm,
+        codeFields.scannedOriginalNorm,
+        current.assy_type,
+        codeFields.assyType,
+        current.part_no,
+        codeFields.partNo,
+        current.raw_barcode || null,
+        newRawBarcode,
+        current.modelo,
+        codeFields.modelo,
+        current.area,
+        area,
+        current.motivo_scrap_id,
+        motivoId,
+        current.motivo_scrap_texto,
+        motivoTexto,
+        current.comentarios,
+        newComentarios,
+        current.cantidad,
+        qtyVal,
+        edit_reason.trim(),
+        editorUserId,
+        editedByName,
+        ahora,
+      ]
+    );
+
+    const [updatedRows] = await connection.query(
+      `SELECT *, DATE_FORMAT(fecha_registro, '%Y-%m-%d') as fecha,
+              DATE_FORMAT(fecha_registro, '%H:%i:%s') as hora
+       FROM scrap_records WHERE id = ?`,
+      [recordId]
+    );
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      data: updatedRows[0],
+    });
+  } catch (err) {
+    try {
+      if (connection) await connection.rollback();
+    } catch (_) {}
+    next(err);
+  } finally {
+    if (connection) connection.release();
   }
 };
 

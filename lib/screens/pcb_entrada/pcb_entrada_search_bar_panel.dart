@@ -52,6 +52,7 @@ class _PcbEntradaSearchBarPanelState extends State<PcbEntradaSearchBarPanel> {
 
     final headers = [
       tr('pcb_scanned_code'),
+      tr('pcb_linea_salida'),
       tr('pcb_area'),
       tr('pcb_defect_type'),
       tr('pcb_etapa_deteccion'),
@@ -69,6 +70,7 @@ class _PcbEntradaSearchBarPanelState extends State<PcbEntradaSearchBarPanel> {
     ];
     final fields = [
       'scanned_original',
+      'linea_salida_pcb',
       'area',
       'defect_type',
       'etapa_deteccion',

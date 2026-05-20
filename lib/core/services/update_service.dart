@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -134,30 +135,41 @@ class UpdateService {
   
   /// Cargar la versión actual desde VERSION.txt
   static Future<void> loadCurrentVersion() async {
+    // 1) Intentar leerlo como asset Flutter (forma correcta — funciona en
+    //    debug, release y siempre que el archivo este declarado en pubspec.yaml).
     try {
-      // En modo release, el VERSION.txt está en el directorio de la app
+      final raw = await rootBundle.loadString('VERSION.txt');
+      _currentVersion = raw.trim();
+      debugPrint('📱 App version loaded from asset bundle: $_currentVersion');
+      return;
+    } catch (e) {
+      debugPrint('⚠️ rootBundle.loadString(VERSION.txt) fallo: $e');
+    }
+
+    // 2) Fallback: buscar como archivo del filesystem. Util si por algun motivo
+    //    el bundle no devuelve el asset (ambientes raros o exe portable).
+    try {
       final exePath = Platform.resolvedExecutable;
       final exeDir = File(exePath).parent.path;
-      
-      // Intentar diferentes ubicaciones
+
       final possiblePaths = [
+        '$exeDir\\data\\flutter_assets\\VERSION.txt',
         '$exeDir\\data\\flutter_assets\\assets\\VERSION.txt',
         '$exeDir\\VERSION.txt',
-        'assets/VERSION.txt',
+        'VERSION.txt',
       ];
-      
+
       for (final path in possiblePaths) {
         final file = File(path);
         if (await file.exists()) {
           _currentVersion = (await file.readAsString()).trim();
-          debugPrint('📱 App version loaded: $_currentVersion from $path');
+          debugPrint('📱 App version loaded from file: $_currentVersion ($path)');
           return;
         }
       }
-      
-      // Si no se encuentra, usar versión por defecto
+
       _currentVersion = '1.0.0';
-      debugPrint('⚠️ VERSION.txt not found, using default: $_currentVersion');
+      debugPrint('⚠️ VERSION.txt not found anywhere, using default: $_currentVersion');
     } catch (e) {
       _currentVersion = '1.0.0';
       debugPrint('❌ Error loading version: $e');

@@ -6,7 +6,7 @@
 const { pool } = require('./config/database');
 
 async function addReentryColumns() {
-  console.log('🚀 Agregando columnas de Reingreso...\n');
+  console.log('Agregando columnas de Reingreso...\n');
 
   const alterStatements = [
     {

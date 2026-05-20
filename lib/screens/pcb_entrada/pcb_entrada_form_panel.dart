@@ -41,6 +41,10 @@ class PcbEntradaFormPanelState extends State<PcbEntradaFormPanel> {
   String? _detectedEtapa; // 'LQC' | 'OQC' | 'AIS' | null
   String? _detectedSourceArea; // 'M1', 'SMD', etc — read-only
   String? _detectedDefectDataId;
+  // Linea de salida (M1..M4, DP1..DP3, H1). Si viene de history_vision se
+  // muestra como auto-detectada; si no, se pide manualmente al usuario.
+  String? _detectedLineaSalida;
+  bool _lineaSalidaWasAuto = false;
   List<Map<String, dynamic>> _defects = [];
   List<Map<String, dynamic>> _users = [];
   int? _selectedUserId;
@@ -60,6 +64,9 @@ class PcbEntradaFormPanelState extends State<PcbEntradaFormPanel> {
 
   static const List<String> _procesos = ['SMD', 'IMD', 'ASSY'];
   static const List<String> _areas = ['INVENTARIO', 'REPARACION'];
+  static const List<String> _lineasSalida = [
+    'M1', 'M2', 'M3', 'M4', 'DP1', 'DP2', 'DP3', 'H1'
+  ];
 
   String tr(String key) => widget.languageProvider.tr(key);
 
@@ -336,6 +343,33 @@ class PcbEntradaFormPanelState extends State<PcbEntradaFormPanel> {
           _detectedDefectDataId = selected['id']?.toString();
         });
       }
+
+      // Lookup de linea_salida en history_vision. Si no se encuentra (o la
+      // maquina no es una de las lineas validas), pedir al usuario que la
+      // seleccione manualmente. Si cancela, abortar el scan.
+      final lineaResult = await ApiService.lookupLineaSalidaPcb(code);
+      if (!mounted) return;
+      String? lineaSalida = lineaResult['linea']?.toString();
+      bool wasAuto = lineaResult['found'] == true && lineaSalida != null;
+      if (!wasAuto) {
+        final rawName = lineaResult['raw_machine_name']?.toString();
+        final picked = await _askLineaSalidaManual(rawMachineName: rawName);
+        if (!mounted) return;
+        if (picked == null) {
+          setState(() {
+            _statusMessage = tr('pcb_linea_required');
+            _statusIsError = true;
+          });
+          requestScanFocus();
+          return;
+        }
+        lineaSalida = picked;
+        wasAuto = false;
+      }
+      setState(() {
+        _detectedLineaSalida = lineaSalida;
+        _lineaSalidaWasAuto = wasAuto;
+      });
     }
 
     final arrayCount = isArrayItem ? _pendingArrayCount : _getArrayCount();
@@ -411,6 +445,7 @@ class PcbEntradaFormPanelState extends State<PcbEntradaFormPanel> {
       etapaDeteccion: isRepairEntry ? _detectedEtapa : null,
       defectSourceArea: isRepairEntry ? _detectedSourceArea : null,
       defectDataId: isRepairEntry ? _detectedDefectDataId : null,
+      lineaSalidaPcb: _detectedLineaSalida,
       comentarios: _buildComments(isArrayItem: isArrayItem),
       scannedBy: _selectedScannedBy,
     );
@@ -484,7 +519,11 @@ class PcbEntradaFormPanelState extends State<PcbEntradaFormPanel> {
         else if (errorCode == 'INVALID_ARRAY_COUNT')
           msg = tr('pcb_invalid_array_count');
         else if (errorCode == 'MISSING_DEFECT_TYPE' ||
-            errorCode == 'INVALID_DEFECT_TYPE') msg = tr('pcb_defect_required');
+            errorCode == 'INVALID_DEFECT_TYPE')
+          msg = tr('pcb_defect_required');
+        else if (errorCode == 'MISSING_LINEA_SALIDA' ||
+            errorCode == 'INVALID_LINEA_SALIDA')
+          msg = tr('pcb_linea_required');
         setState(() {
           _statusMessage = msg;
           _statusIsError = true;
@@ -534,6 +573,79 @@ class PcbEntradaFormPanelState extends State<PcbEntradaFormPanel> {
     _detectedEtapa = null;
     _detectedSourceArea = null;
     _detectedDefectDataId = null;
+    _detectedLineaSalida = null;
+    _lineaSalidaWasAuto = false;
+  }
+
+  Future<String?> _askLineaSalidaManual({String? rawMachineName}) async {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panelBackground,
+        title: Row(
+          children: [
+            const Icon(Icons.alt_route, color: Colors.cyan, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                tr('pcb_select_linea_salida'),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                rawMachineName != null && rawMachineName.isNotEmpty
+                    ? '${tr('pcb_linea_not_recognized')}: $rawMachineName'
+                    : tr('pcb_linea_not_found_hint'),
+                style: const TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _lineasSalida.map((linea) {
+                  return SizedBox(
+                    width: 70,
+                    height: 40,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, linea),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.fieldBackground,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                      ),
+                      child: Text(
+                        linea,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: Text(tr('cancel'),
+                style: const TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
   }
 
   Color _etapaColor(String? etapa) {
@@ -958,6 +1070,51 @@ class PcbEntradaFormPanelState extends State<PcbEntradaFormPanel> {
                   child: Text(
                     '${tr('pcb_source_area')}: ${_detectedSourceArea!}',
                     style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ),
+              ],
+              if (_detectedLineaSalida != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  height: 28,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: (_lineaSalidaWasAuto
+                            ? Colors.lightGreen
+                            : Colors.orangeAccent)
+                        .withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                        color: _lineaSalidaWasAuto
+                            ? Colors.lightGreen
+                            : Colors.orangeAccent,
+                        width: 1),
+                  ),
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _lineaSalidaWasAuto
+                            ? Icons.auto_awesome
+                            : Icons.touch_app,
+                        size: 12,
+                        color: _lineaSalidaWasAuto
+                            ? Colors.lightGreen
+                            : Colors.orangeAccent,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${tr('pcb_linea_salida')}: $_detectedLineaSalida',
+                        style: TextStyle(
+                          color: _lineaSalidaWasAuto
+                              ? Colors.lightGreen
+                              : Colors.orangeAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
